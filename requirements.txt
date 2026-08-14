@@ -1,7 +1,10 @@
+flask
 opencv-python
 reportlab
 transformers==4.46.0
-torch 
-pillow 
+torch
+pillow
 numpy
 sentencepiece
+# optional, only needed if EXTRACTION_MODE=llm (chatbot)
+# anthropic

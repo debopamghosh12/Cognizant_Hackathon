@@ -6,8 +6,11 @@ auto-alerts write to.
 
 ## Run it
 
+From the repo root:
+
 ```bash
 pip install -r requirements.txt
+cd chatbot
 python app.py
 ```
 Open http://localhost:8000
