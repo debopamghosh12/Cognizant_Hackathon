@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+.env
+data/scm_project.db
+output/printable_invoices/*.pdf
+*.txt
+!requirements.txt
+!README.md
