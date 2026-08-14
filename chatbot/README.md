@@ -64,6 +64,22 @@ Open http://localhost:8000
 5. Show `GET /requisitions` (or the dashboard) with a mix of `MANUAL_CHATBOT` and
    `AUTO_P1` rows in the same table — that's the actual acceptance check.
 
+## SKU scope
+
+`db.py`'s seeded SKUs (`SKU-1001`..`SKU-1010`) are finished products. The
+supplier-selection module's catalog (`data/suppliers.csv`) is built around a
+separate, smaller list of raw-material SKUs (`SKU-API-*`, `SKU-EXC-*`,
+`SKU-PKG-*`) — these two lists are intentionally kept separate, not renamed
+or merged into each other. **Demo scope: SKUs are treated as directly
+orderable finished products for this hackathon; a production system would
+resolve a finished-product requisition into a bill of materials across
+multiple raw-material suppliers, which is out of scope here.** To let demo
+requisitions (including the two below) resolve to a real supplier and flow
+through PO generation and the OCR/3-way-match pipeline, `SKU-1001`,
+`SKU-1002`, `SKU-1007`, and `SKU-1010` also have matching rows in
+`data/suppliers.csv` (`category = "Finished Product"`) — see `docs/
+SCHEMA.md`'s "Demo scope" section.
+
 ## Known limits (intentional, per the brief)
 
 - No multi-turn conversation memory — one-shot only, as specced.
