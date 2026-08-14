@@ -51,7 +51,46 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+    _ensure_po_columns()
     print("Database initialized.")
+
+def _ensure_po_columns():
+    """Additive migration: adds PO-generation traceability columns to an
+    already-existing purchase_orders table if they aren't there yet."""
+    conn = get_connection()
+    cur = conn.cursor()
+    existing = {row[1] for row in cur.execute("PRAGMA table_info(purchase_orders)")}
+    new_columns = {
+        "supplier_id": "TEXT",
+        "sku_id": "TEXT",
+        "requisition_id": "INTEGER",
+        "lead_time_days": "INTEGER",
+        "destination_dc": "TEXT",
+        "created_at": "TEXT",
+    }
+    for name, col_type in new_columns.items():
+        if name not in existing:
+            cur.execute(f"ALTER TABLE purchase_orders ADD COLUMN {name} {col_type}")
+    conn.commit()
+    conn.close()
+
+def insert_purchase_order(po: dict) -> str:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO purchase_orders
+            (po_id, item_name, quantity_ordered, price_per_unit, total_budget, status,
+             supplier_id, sku_id, requisition_id, lead_time_days, destination_dc, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        po["po_id"], po["item_name"], po["quantity_ordered"], po["price_per_unit"],
+        po["total_budget"], po["status"], po["supplier_id"], po["sku_id"],
+        po.get("requisition_id"), po["lead_time_days"], po["destination_dc"], po["created_at"],
+    ))
+    conn.commit()
+    conn.close()
+    return po["po_id"]
 
 def insert_dummy_po_and_gr():
     """For standalone testing before B1/B3's modules are merged in."""

@@ -1,4 +1,6 @@
 flask
+fastapi
+uvicorn
 opencv-python
 reportlab
 transformers==4.46.0
