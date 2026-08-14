@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PR2 — Purchase Requisition Chatbot</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0f1420; color: #eaeef5; margin: 0; padding: 24px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #8b93a7; font-size: 13px; margin-bottom: 20px; }
+  .chat-box { display: flex; gap: 8px; margin-bottom: 20px; }
+  input[type=text] { flex: 1; padding: 12px 14px; border-radius: 8px; border: 1px solid #2a3348; background: #171d2c; color: #eaeef5; font-size: 15px; }
+  button { padding: 12px 18px; border-radius: 8px; border: none; background: #4f7cff; color: white; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .row { background: #171d2c; border: 1px solid #2a3348; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .badge { padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .b-pending { background: #2d3a20; color: #a8e063; }
+  .b-flagged { background: #402020; color: #ff8a8a; }
+  .grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 14px; }
+  .grid .k { color: #8b93a7; }
+  .assumed { color: #e0a84f; font-style: italic; }
+  .errors { color: #ff8a8a; font-size: 13px; margin-top: 8px; }
+  .pdf-link { display: inline-block; margin-top: 10px; color: #86a8ff; text-decoration: none; font-size: 13px; }
+  .raw { font-size: 12px; color: #6f7891; margin-top: 8px; font-style: italic; }
+  .empty { color: #6f7891; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PR2 — Requisition Chatbot</h1>
+  <div class="sub">Type a plain-English purchase request. It lands directly in the shared requisition queue (source: MANUAL_CHATBOT).</div>
+
+  <div class="chat-box">
+    <input type="text" id="msg" placeholder='e.g. "we need 500 units of paracetamol at the Siliguri DC by Friday"' />
+    <button id="send">Send</button>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+const input = document.getElementById('msg');
+const sendBtn = document.getElementById('send');
+const results = document.getElementById('results');
+
+async function send() {
+  const text = input.value.trim();
+  if (!text) return;
+  sendBtn.disabled = true;
+  sendBtn.textContent = "...";
+  try {
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json();
+    renderRow(data, text);
+    input.value = '';
+  } catch (e) {
+    alert('Request failed: ' + e);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send";
+  }
+}
+
+function renderRow(data, originalText) {
+  const req = data.requisition;
+  const assumed = (req.assumed_fields || '').split(',').filter(Boolean);
+  const isFlagged = req.status === 'FLAGGED';
+
+  const div = document.createElement('div');
+  div.className = 'row';
+  div.innerHTML = `
+    <div class="row-header">
+      <strong>Requisition #${req.id}</strong>
+      <span class="badge ${isFlagged ? 'b-flagged' : 'b-pending'}">${req.status}</span>
+    </div>
+    <div class="grid">
+      <div class="k">SKU ID</div><div>${req.sku_id}</div>
+      <div class="k">Product</div><div>${req.sku_name || '—'}</div>
+      <div class="k">Quantity</div><div>${req.quantity}</div>
+      <div class="k">Destination DC</div><div class="${assumed.includes('destination_dc') ? 'assumed' : ''}">${req.destination_dc}${assumed.includes('destination_dc') ? ' (assumed)' : ''}</div>
+      <div class="k">Urgency</div><div>${req.urgency}</div>
+      <div class="k">Source</div><div>${req.source}</div>
+    </div>
+    ${data.validation_errors && data.validation_errors.length ? `<div class="errors">⚠ ${data.validation_errors.join('; ')}</div>` : ''}
+    <div class="raw">"${originalText}"</div>
+    <a class="pdf-link" href="/requisitions/${req.id}/pdf" target="_blank">Download Purchase Order PDF →</a>
+  `;
+  results.prepend(div);
+}
+
+sendBtn.addEventListener('click', send);
+input.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+</script>
+</body>
+</html>
