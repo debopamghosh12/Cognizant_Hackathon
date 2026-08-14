@@ -1,0 +1,4 @@
+flask
+reportlab
+# optional, only needed if EXTRACTION_MODE=llm
+# anthropic
