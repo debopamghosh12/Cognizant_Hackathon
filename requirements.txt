@@ -1,0 +1,7 @@
+opencv-python
+reportlab
+transformers==4.46.0
+torch 
+pillow 
+numpy
+sentencepiece
