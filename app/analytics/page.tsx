@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import {
   BarChart,
   Bar,
@@ -23,6 +24,7 @@ import {
   touchlessTrend,
   monthlyPOVolume,
 } from "@/lib/data";
+import { getAutomationRate, getAvgCycleTime } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 const tooltipStyle = {
@@ -33,6 +35,14 @@ const tooltipStyle = {
 };
 
 export default function AnalyticsPage() {
+  const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
+  const [avgCycleTime, setAvgCycleTime] = React.useState<number | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    getAutomationRate().then(setAutomationRate);
+    getAvgCycleTime().then(setAvgCycleTime);
+  }, []);
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -41,8 +51,18 @@ export default function AnalyticsPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Automation Rate" value="78%" icon={Zap} trend={{ value: "+4%", direction: "up" }} accent="bg-primary-50 text-primary-600 dark:bg-primary-500/10" />
-        <KpiCard label="Avg. Cycle Time" value="1.6 days" icon={Clock} trend={{ value: "-0.5d", direction: "down", positive: true }} accent="bg-green-50 text-green-600 dark:bg-green-500/10" />
+        <KpiCard
+          label="Automation Rate"
+          value={automationRate === undefined ? "…" : automationRate === null ? "—" : `${automationRate}%`}
+          icon={Zap}
+          accent="bg-primary-50 text-primary-600 dark:bg-primary-500/10"
+        />
+        <KpiCard
+          label="Avg. Cycle Time"
+          value={avgCycleTime === undefined ? "…" : avgCycleTime === null ? "—" : `${avgCycleTime} days`}
+          icon={Clock}
+          accent="bg-green-50 text-green-600 dark:bg-green-500/10"
+        />
         <KpiCard label="Invoice Processing" value="0.9 days" icon={ScanText} trend={{ value: "-0.4d", direction: "down", positive: true }} accent="bg-violet-50 text-violet-600 dark:bg-violet-500/10" />
         <KpiCard label="Monthly PO Volume" value="312" icon={ShoppingCart} trend={{ value: "-2.5%", direction: "down", positive: false }} accent="bg-amber-50 text-amber-600 dark:bg-amber-500/10" />
       </div>

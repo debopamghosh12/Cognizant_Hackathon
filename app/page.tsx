@@ -17,25 +17,24 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { ChartCard } from "@/components/shared/chart-card";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { AIRecommendationPanel } from "@/components/dashboard/ai-recommendation-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import {
-  kpis,
   procurementTrend,
   poStatusDistribution,
   recentActivity,
   touchlessTrend,
 } from "@/lib/data";
-import { getRequisitions, getPurchaseOrders, getInvoiceMatches } from "@/lib/api";
+import { getRequisitions, getPurchaseOrders, getInvoiceMatches, getInvoices, getAutomationRate } from "@/lib/api";
 
 export default function DashboardPage() {
   const [totalRequisitions, setTotalRequisitions] = React.useState<number | null>(null);
   const [totalPOs, setTotalPOs] = React.useState<number | null>(null);
   // undefined = still loading, null = loaded but no attempted matches yet
   const [matchRate, setMatchRate] = React.useState<number | null | undefined>(undefined);
+  const [ocrSuccessRate, setOcrSuccessRate] = React.useState<number | null | undefined>(undefined);
+  const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
 
   React.useEffect(() => {
     getRequisitions().then((r) => setTotalRequisitions(r.length));
@@ -46,6 +45,15 @@ export default function DashboardPage() {
       const attempted = approved + flagged;
       setMatchRate(attempted === 0 ? null : Math.round((approved / attempted) * 1000) / 10);
     });
+    getInvoices().then((invoices) => {
+      if (invoices.length === 0) {
+        setOcrSuccessRate(null);
+        return;
+      }
+      const extracted = invoices.filter((inv) => inv.status !== "Needs Review").length;
+      setOcrSuccessRate(Math.round((extracted / invoices.length) * 1000) / 10);
+    });
+    getAutomationRate().then(setAutomationRate);
   }, []);
 
   return (
@@ -70,9 +78,8 @@ export default function DashboardPage() {
         />
         <KpiCard
           label="Invoice OCR Success Rate"
-          value={`${kpis.ocrSuccessRate}%`}
+          value={ocrSuccessRate === undefined ? "…" : ocrSuccessRate === null ? "—" : `${ocrSuccessRate}%`}
           icon={ScanText}
-          trend={{ value: "+2.1%", direction: "up", positive: true }}
           accent="bg-violet-50 text-violet-600 dark:bg-violet-500/10"
         />
         <KpiCard
@@ -190,10 +197,11 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-foreground">78%</span>
-                <Badge variant="success">+4% MoM</Badge>
+                <span className="text-3xl font-bold text-foreground">
+                  {automationRate === undefined ? "…" : automationRate === null ? "—" : `${automationRate}%`}
+                </span>
               </div>
-              <Progress value={78} className="mt-3" />
+              <Progress value={automationRate ?? 0} className="mt-3" />
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 {touchlessTrend.slice(-3).map((t) => (
                   <div key={t.month} className="rounded-md bg-secondary py-2">

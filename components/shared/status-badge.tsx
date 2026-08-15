@@ -19,6 +19,8 @@ const statusMap: Record<string, { variant: "success" | "warning" | "destructive"
   "Needs Review": { variant: "warning" },
   "Matched": { variant: "success" },
   "Flagged": { variant: "destructive" },
+  "Manually Approved": { variant: "info" },
+  "Escalated": { variant: "warning" },
   "Preferred": { variant: "success" },
   "Watchlist": { variant: "warning" },
   "Under Review": { variant: "destructive" },

@@ -8,22 +8,37 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import type { PurchaseOrder } from "@/lib/data";
-import { getPurchaseOrders } from "@/lib/api";
+import { getPurchaseOrders, sendPurchaseOrder } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 export default function PurchaseOrdersPage() {
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<PurchaseOrder | null>(null);
+  const [isSending, setIsSending] = React.useState(false);
+
+  const loadPurchaseOrders = React.useCallback((preserveSelectedId?: string) => {
+    return getPurchaseOrders().then((data) => {
+      setPurchaseOrders(data);
+      setSelected((prev) => data.find((p) => p.id === (preserveSelectedId ?? prev?.id)) ?? data[0] ?? null);
+      return data;
+    });
+  }, []);
 
   React.useEffect(() => {
-    getPurchaseOrders()
-      .then((data) => {
-        setPurchaseOrders(data);
-        setSelected(data[0] ?? null);
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+    loadPurchaseOrders().finally(() => setIsLoading(false));
+  }, [loadPurchaseOrders]);
+
+  async function handleSendToSupplier() {
+    if (!selected) return;
+    setIsSending(true);
+    try {
+      await sendPurchaseOrder(selected.id);
+      await loadPurchaseOrders(selected.id);
+    } finally {
+      setIsSending(false);
+    }
+  }
 
   return (
     <div className="animate-fade-in">
@@ -141,8 +156,12 @@ export default function PurchaseOrdersPage() {
               <Button className="flex-1" variant="outline">
                 <Download size={15} /> Download PO
               </Button>
-              <Button className="flex-1">
-                <Send size={15} /> Send to Supplier
+              <Button
+                className="flex-1"
+                onClick={handleSendToSupplier}
+                disabled={selected.status !== "Draft" || isSending}
+              >
+                <Send size={15} /> {selected.status !== "Draft" ? "Sent" : isSending ? "Sending..." : "Send to Supplier"}
               </Button>
             </div>
           </CardContent>

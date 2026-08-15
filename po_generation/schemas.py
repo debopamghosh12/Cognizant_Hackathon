@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -56,3 +56,25 @@ class GoodsReceiptResponse(BaseModel):
     quantity_ordered: float
     variance_applied: bool
     variance_pct: float
+
+
+class InvoiceDecisionRequest(BaseModel):
+    action: Literal["approve", "reject", "escalate"]
+
+
+class InvoiceResponse(BaseModel):
+    invoice_id: str
+    po_id: str
+    gr_id: Optional[str] = None
+    # item_name and the numeric fields can be NULL on rows produced by the
+    # legacy OCR pipeline (src/main.py) when extraction was Incomplete/
+    # Failed -- this endpoint serves any existing invoice, not just ones
+    # generate_synthetic_invoice() creates, so it must tolerate that shape.
+    item_name: Optional[str] = None
+    quantity_ordered: Optional[float] = None
+    quantity_received: Optional[float] = None
+    price_per_unit: Optional[float] = None
+    total_amount: Optional[float] = None
+    extraction_status: str
+    match_status: str
+    printable_path: Optional[str] = None

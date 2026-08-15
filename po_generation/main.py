@@ -9,8 +9,11 @@ import database  # src/database.py — purchase_orders table lives here
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
-from .generator import generate_po, simulate_delivery, build_match_rows
-from .schemas import GeneratePORequest, POResponse, GoodsReceiptResponse, SimulateDeliveryRequest
+from .generator import generate_po, generate_synthetic_invoice, build_match_rows
+from .schemas import (
+    GeneratePORequest, POResponse, GoodsReceiptResponse, SimulateDeliveryRequest,
+    InvoiceResponse, InvoiceDecisionRequest,
+)
 
 app = FastAPI(title="PO Generation")
 
@@ -41,13 +44,55 @@ def list_purchase_orders_endpoint():
 
 @app.post("/simulate-delivery/{po_id}", response_model=GoodsReceiptResponse, status_code=201)
 def simulate_delivery_endpoint(po_id: str, body: SimulateDeliveryRequest = SimulateDeliveryRequest()):
+    # body.quantity_received is this delivery's increment (not a running
+    # total) -- omitting it delivers everything still outstanding.
+    try:
+        return database.record_delivery(po_id, body.quantity_received)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/purchase-orders/{po_id}/send", response_model=POResponse)
+def send_purchase_order_endpoint(po_id: str):
     po = database.get_purchase_order(po_id)
     if po is None:
         raise HTTPException(status_code=404, detail=f"purchase order '{po_id}' not found")
 
-    gr = simulate_delivery(po_id, po["quantity_ordered"], body.quantity_received)
-    database.insert_goods_receipt(gr)
-    return gr
+    database.update_po_status(po_id, "Sent")
+    return database.get_purchase_order(po_id)
+
+
+@app.post("/purchase-orders/{po_id}/generate-invoice", response_model=InvoiceResponse, status_code=201)
+def generate_invoice_endpoint(po_id: str):
+    po = database.get_purchase_order(po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail=f"purchase order '{po_id}' not found")
+
+    if database.get_invoice_by_po(po_id) is not None:
+        raise HTTPException(status_code=409, detail=f"an invoice already exists for purchase order '{po_id}'")
+
+    gr = database.get_goods_receipt_by_po(po_id)
+    if gr is None:
+        raise HTTPException(status_code=400, detail=f"purchase order '{po_id}' has no goods receipt yet")
+
+    invoice = generate_synthetic_invoice(po, gr)
+    database.insert_invoice(invoice)
+    return invoice
+
+
+@app.patch("/invoices/{invoice_id}/decision", response_model=InvoiceResponse)
+def invoice_decision_endpoint(invoice_id: str, body: InvoiceDecisionRequest):
+    invoice = database.get_invoice(invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail=f"invoice '{invoice_id}' not found")
+
+    decision_map = {
+        "approve": ("Approved_Manual", None),
+        "reject": ("Rejected", "Cancelled"),
+        "escalate": ("Escalated", None),
+    }
+    match_status, po_status = decision_map[body.action]
+    return database.update_invoice_decision(invoice_id, match_status, po_status)
 
 
 @app.get("/matches")

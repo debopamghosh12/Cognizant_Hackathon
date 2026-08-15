@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import uuid
 from config import DB_PATH
 
 def get_connection():
@@ -153,6 +154,97 @@ def insert_goods_receipt(gr: dict) -> str:
     conn.commit()
     conn.close()
     return gr["gr_id"]
+
+def record_delivery(po_id: str, additional_qty: float | None = None) -> dict:
+    """Adds additional_qty to the PO's single goods_receipts row (creating it
+    on first delivery), capped at the PO's quantity_ordered so a delivery can
+    never push received quantity past what was actually ordered. Status is
+    derived and stored here -- authoritative, not inferred client-side.
+    additional_qty=None delivers everything still outstanding (a one-click
+    full delivery). Returns the row plus quantity_ordered/variance_applied/
+    variance_pct so callers can build a GoodsReceiptResponse directly."""
+    po = get_purchase_order(po_id)
+    if po is None:
+        raise ValueError(f"purchase order '{po_id}' not found")
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    existing = cur.execute("SELECT * FROM goods_receipts WHERE po_id=?", (po_id,)).fetchone()
+
+    ordered = po["quantity_ordered"]
+    current_received = existing["quantity_received"] if existing else 0
+    if additional_qty is None:
+        additional_qty = max(ordered - current_received, 0)
+    new_received = min(current_received + additional_qty, ordered)
+    status = "Pending" if new_received <= 0 else ("Fully Received" if new_received >= ordered else "Partially Received")
+
+    if existing:
+        cur.execute(
+            "UPDATE goods_receipts SET quantity_received=?, status=? WHERE gr_id=?",
+            (new_received, status, existing["gr_id"]),
+        )
+        gr_id = existing["gr_id"]
+    else:
+        gr_id = f"GR-{uuid.uuid4().hex[:8].upper()}"
+        cur.execute(
+            "INSERT INTO goods_receipts (gr_id, po_id, quantity_received, status) VALUES (?, ?, ?, ?)",
+            (gr_id, po_id, new_received, status),
+        )
+
+    conn.commit()
+    row = dict(cur.execute("SELECT * FROM goods_receipts WHERE gr_id=?", (gr_id,)).fetchone())
+    conn.close()
+
+    row["quantity_ordered"] = ordered
+    row["variance_applied"] = new_received < ordered
+    row["variance_pct"] = round((new_received - ordered) / ordered * 100, 2) if ordered else 0.0
+    return row
+
+def update_po_status(po_id: str, status: str) -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE purchase_orders SET status=? WHERE po_id=?", (status, po_id))
+    conn.commit()
+    conn.close()
+
+def insert_invoice(invoice: dict) -> str:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO invoices
+            (invoice_id, po_id, gr_id, item_name, quantity_ordered, quantity_received,
+             price_per_unit, total_amount, extraction_status, match_status, printable_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        invoice["invoice_id"], invoice["po_id"], invoice.get("gr_id"), invoice["item_name"],
+        invoice["quantity_ordered"], invoice["quantity_received"], invoice["price_per_unit"],
+        invoice["total_amount"], invoice["extraction_status"], invoice["match_status"],
+        invoice.get("printable_path"),
+    ))
+    conn.commit()
+    conn.close()
+    return invoice["invoice_id"]
+
+def get_invoice_by_po(po_id: str) -> dict | None:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM invoices WHERE po_id=?", (po_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def update_invoice_decision(invoice_id: str, match_status: str, po_status: str | None = None) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE invoices SET match_status=? WHERE invoice_id=?", (match_status, invoice_id))
+    if po_status is not None:
+        invoice_po_id = cur.execute("SELECT po_id FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
+        if invoice_po_id:
+            cur.execute("UPDATE purchase_orders SET status=? WHERE po_id=?", (po_status, invoice_po_id[0]))
+    conn.commit()
+    conn.close()
+    return get_invoice(invoice_id)
 
 def insert_dummy_po_and_gr():
     """For standalone testing before B1/B3's modules are merged in."""

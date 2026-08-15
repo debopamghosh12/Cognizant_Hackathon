@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
-import { Send, Sparkles, Bot } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Send, Sparkles, Bot, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { ChatBubble } from "@/components/assistant/chat-bubble";
 import { AIResponseCard } from "@/components/assistant/ai-response-card";
@@ -18,6 +19,7 @@ type MessageContent =
       badgeVariant?: "success" | "warning" | "destructive" | "info" | "neutral";
       fields?: { label: string; value: string }[];
       note?: string;
+      requisitionId?: number;
     };
 
 interface Message {
@@ -84,12 +86,14 @@ function buildResultCard(result: ChatResult): Message {
           { label: "Urgency", value: req.urgency },
         ],
         note: noteParts.length > 0 ? noteParts.join(" ") : undefined,
+        requisitionId: req.id,
       },
     ],
   };
 }
 
 export default function AssistantPage() {
+  const router = useRouter();
   const [messages, setMessages] = React.useState<Message[]>([
     {
       id: 0,
@@ -163,6 +167,8 @@ export default function AssistantPage() {
                     badgeVariant={c.badgeVariant}
                     fields={c.fields}
                     note={c.note}
+                    actions={c.requisitionId != null ? [{ label: "View Requisition", icon: ArrowRight }] : undefined}
+                    onAction={() => router.push(`/requisitions?highlight=REQ-${c.requisitionId}`)}
                   />
                 )
               )}

@@ -51,10 +51,24 @@ export interface CollapsedSupplier extends SupplierRow {
   contracts: number;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const csvPath = path.join(process.cwd(), "data", "suppliers.csv");
   const text = await readFile(csvPath, "utf-8");
   const rows = parseCsv(text);
+
+  const skuId = new URL(request.url).searchParams.get("sku_id");
+  if (skuId) {
+    // Sourcing needs every supplier-SKU row for this specific SKU, not the
+    // one-row-per-company view below (which would silently hide a
+    // supplier's row for this SKU if they score higher on a different SKU
+    // they also carry). Sorted best-suitability-first so callers can just
+    // take the top result.
+    const matches: CollapsedSupplier[] = rows
+      .filter((r) => r.sku_id === skuId)
+      .map((r) => ({ ...r, contracts: 1 }))
+      .sort((a, b) => parseFloat(b.suitability_score) - parseFloat(a.suitability_score));
+    return NextResponse.json(matches);
+  }
 
   const bySupplier = new Map<string, SupplierRow[]>();
   for (const row of rows) {

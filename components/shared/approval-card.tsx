@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import { CheckCircle2, XCircle, AlertTriangle, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +8,26 @@ import { Progress } from "@/components/ui/progress";
 import { formatCurrency, cn } from "@/lib/utils";
 import type { Approval } from "@/lib/data";
 
-export function ApprovalCard({ approval }: { approval: Approval }) {
+type DecisionAction = "approve" | "reject" | "escalate";
+
+export function ApprovalCard({
+  approval,
+  onDecision,
+}: {
+  approval: Approval;
+  onDecision: (invoiceId: string, action: DecisionAction) => Promise<void> | void;
+}) {
+  const [pending, setPending] = React.useState<DecisionAction | null>(null);
+
+  async function handleClick(action: DecisionAction) {
+    setPending(action);
+    try {
+      await onDecision(approval.invoiceId, action);
+    } finally {
+      setPending(null);
+    }
+  }
+
   const level = approval.confidence >= 90 ? "high" : approval.confidence >= 70 ? "medium" : "low";
   const levelConfig = {
     high: { color: "bg-green-600", badge: "success" as const, label: "High Confidence" },
@@ -45,14 +65,32 @@ export function ApprovalCard({ approval }: { approval: Approval }) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button size="sm" variant="success" className="flex-1">
-            <CheckCircle2 size={14} /> Approve
+          <Button
+            size="sm"
+            variant="success"
+            className="flex-1"
+            disabled={pending !== null}
+            onClick={() => handleClick("approve")}
+          >
+            <CheckCircle2 size={14} /> {pending === "approve" ? "Approving..." : "Approve"}
           </Button>
-          <Button size="sm" variant="destructive" className="flex-1">
-            <XCircle size={14} /> Reject
+          <Button
+            size="sm"
+            variant="destructive"
+            className="flex-1"
+            disabled={pending !== null}
+            onClick={() => handleClick("reject")}
+          >
+            <XCircle size={14} /> {pending === "reject" ? "Rejecting..." : "Reject"}
           </Button>
-          <Button size="sm" variant="outline" className="flex-1">
-            <AlertTriangle size={14} /> Escalate
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            disabled={pending !== null}
+            onClick={() => handleClick("escalate")}
+          >
+            <AlertTriangle size={14} /> {pending === "escalate" ? "Escalating..." : "Escalate"}
           </Button>
         </div>
       </CardContent>

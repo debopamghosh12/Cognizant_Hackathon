@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval } from "@/lib/data";
 
 interface RawRequisition {
   id: number;
@@ -121,6 +121,29 @@ export async function getSuppliers(): Promise<Supplier[]> {
   return raw.map(transformSupplier);
 }
 
+// Uncollapsed, one row per supplier-SKU pair for this specific SKU, sorted
+// best-suitability-first server-side (see app/api/suppliers/route.ts's
+// ?sku_id filter) -- deliberately NOT the same collapsed-per-company list
+// getSuppliers() returns, since a supplier's row for THIS sku could be
+// hidden there if they score higher on a different SKU they also carry.
+export async function getSuppliersForSku(skuId: string): Promise<Supplier[]> {
+  const res = await fetch(`/api/suppliers?sku_id=${encodeURIComponent(skuId)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch suppliers for ${skuId}: ${res.status}`);
+  }
+  const raw: RawSupplier[] = await res.json();
+  return raw.map(transformSupplier);
+}
+
+// "Run AI Sourcing" (app/requisitions/page.tsx): best candidate for a
+// requisition's SKU, already ranked by suitability_score server-side --
+// this just takes the top one, or null if the SKU has no supplier coverage
+// (a real, known gap for 6 of the chatbot's 10 seeded SKUs).
+export async function findBestSupplier(skuId: string): Promise<Supplier | null> {
+  const candidates = await getSuppliersForSku(skuId);
+  return candidates[0] ?? null;
+}
+
 export interface GeneratePOResult {
   po_id: string;
   item_name: string;
@@ -205,6 +228,7 @@ interface RawPurchaseOrder {
 // Acknowledged were chosen over Sent/Completed.
 const PO_STATUS_MAP: Record<string, POStatus> = {
   Open: "Draft",
+  Sent: "Sent",
   Validated: "Acknowledged",
 };
 
@@ -276,18 +300,24 @@ export async function getInvoiceMatches(): Promise<InvoiceMatch[]> {
 // uses -- po_generation/main.py enriches each row with its goods_receipt
 // (or null), so this is one more consumer of that one endpoint rather
 // than a duplicate "list POs" route.
-const MATCH_TOLERANCE_PERCENT = 2; // mirrors src/validate.py's MATCH_TOLERANCE_PERCENT
+
+// Status is decided authoritatively server-side by src/database.py::
+// record_delivery() (accumulated + capped at quantity_ordered) -- just a
+// straight lookup here, no client-side tolerance inference.
+const GR_STATUS_MAP: Record<string, DeliveryStatus> = {
+  Pending: "Awaiting Receipt",
+  "Partially Received": "Partially Received",
+  "Fully Received": "Fully Received",
+};
 
 function transformDelivery(raw: RawPurchaseOrder): Delivery {
   const gr = raw.goods_receipt;
   const expectedDate = computeExpectedDate(raw.created_at, raw.lead_time_days);
 
-  let status: DeliveryStatus = "Awaiting Receipt";
-  let variancePct: number | null = null;
-  if (gr) {
-    variancePct = raw.quantity_ordered === 0 ? 0 : ((gr.quantity_received - raw.quantity_ordered) / raw.quantity_ordered) * 100;
-    status = Math.abs(variancePct) <= MATCH_TOLERANCE_PERCENT ? "Fully Received" : "Partially Received";
-  }
+  const status: DeliveryStatus = gr ? (GR_STATUS_MAP[gr.status] ?? "Awaiting Receipt") : "Awaiting Receipt";
+  const variancePct = gr && raw.quantity_ordered !== 0
+    ? ((gr.quantity_received - raw.quantity_ordered) / raw.quantity_ordered) * 100
+    : null;
 
   return {
     id: raw.po_id,
@@ -299,6 +329,7 @@ function transformDelivery(raw: RawPurchaseOrder): Delivery {
     status,
     expectedDate: expectedDate.toISOString(),
     variancePct,
+    poStatus: PO_STATUS_MAP[raw.status] ?? "Draft",
   };
 }
 
@@ -321,6 +352,17 @@ export interface ReceiveDeliveryResult {
   variance_pct: number;
 }
 
+export async function sendPurchaseOrder(poId: string): Promise<void> {
+  const res = await fetch(`/api/purchase-orders/${poId}/send`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Failed to send PO ${poId}: ${res.status}`);
+  }
+}
+
+// quantityReceived is THIS delivery's increment, added to whatever the PO
+// has already received (src/database.py::record_delivery(), capped at
+// quantity_ordered) -- not a running-total override. Omit it to deliver
+// everything still outstanding in one call.
 export async function receiveDelivery(poId: string, quantityReceived?: number): Promise<ReceiveDeliveryResult> {
   const res = await fetch(`/api/simulate-delivery/${poId}`, {
     method: "POST",
@@ -347,15 +389,27 @@ interface RawInvoice {
   price_per_unit: number | null;
   total_amount: number | null;
   extraction_status: "Failed" | "Incomplete" | "Extracted";
-  match_status: "Flagged_For_Review" | "Approved" | "Awaiting_Goods_Receipt" | null;
+  match_status: "Flagged_For_Review" | "Approved" | "Approved_Manual" | "Rejected" | "Escalated" | "Awaiting_Goods_Receipt" | null;
   printable_path: string | null;
 }
 
 function deriveInvoiceStatus(raw: RawInvoice): InvoiceStatus {
   if (raw.extraction_status !== "Extracted") return "Needs Review";
   if (raw.match_status === "Approved") return "Matched";
+  if (raw.match_status === "Approved_Manual") return "Manually Approved";
+  if (raw.match_status === "Rejected") return "Rejected";
+  if (raw.match_status === "Escalated") return "Escalated";
   if (raw.match_status === "Flagged_For_Review") return "Flagged";
   return "Awaiting Delivery"; // Awaiting_Goods_Receipt
+}
+
+export async function generateInvoice(poId: string): Promise<InvoiceRecord> {
+  const res = await fetch(`/api/purchase-orders/${poId}/generate-invoice`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Failed to generate invoice: ${res.status}`);
+  }
+  return transformInvoice({ ...data, supplier_id: null });
 }
 
 function transformInvoice(raw: RawInvoice): InvoiceRecord {
@@ -377,6 +431,79 @@ export async function getInvoices(): Promise<InvoiceRecord[]> {
   }
   const raw: RawInvoice[] = await res.json();
   return raw.map(transformInvoice);
+}
+
+// Approvals queue = invoices that failed auto-match (getInvoiceMatches()
+// already returns the per-check pass/fail rows build_match_rows() computed
+// server-side -- reused here for both the confidence score, same fraction-
+// of-passing-rows formula the Matching page uses, and a plain-English
+// reason built from the failed checks' own labels).
+export async function getApprovals(): Promise<Approval[]> {
+  const [matches, invoices] = await Promise.all([getInvoiceMatches(), getInvoices()]);
+  const invoiceById = new Map(invoices.map((inv) => [inv.id, inv]));
+
+  return matches
+    .filter((m) => m.match_status === "Flagged_For_Review")
+    .map((m) => {
+      const invoice = invoiceById.get(m.invoice_id);
+      const failedLabels = m.rows.filter((r) => !r.match).map((r) => r.label);
+      const confidence = m.rows.length === 0
+        ? 0
+        : Math.round((m.rows.filter((r) => r.match).length / m.rows.length) * 100);
+      return {
+        id: m.invoice_id,
+        invoiceId: m.invoice_id,
+        supplier: invoice?.supplier ?? "—",
+        amount: invoice?.amount ?? 0,
+        confidence,
+        reasoning: failedLabels.length > 0
+          ? `${failedLabels.join(", ")} outside the 2% match tolerance.`
+          : "Flagged for review.",
+      };
+    });
+}
+
+export async function postApprovalDecision(invoiceId: string, action: "approve" | "reject" | "escalate"): Promise<void> {
+  const res = await fetch(`/api/invoices/${invoiceId}/decision`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to record decision for ${invoiceId}: ${res.status}`);
+  }
+}
+
+// Shared by Dashboard and Analytics (previously two independent hardcoded
+// "78%" literals that could never agree) -- auto-approved (touchless)
+// share of all fully-processed invoices. Approved_Manual is deliberately
+// excluded from the numerator: a human decision is not touchless.
+export async function getAutomationRate(): Promise<number | null> {
+  const invoices = await getInvoices();
+  const processed = invoices.filter((inv) => inv.status !== "Needs Review");
+  if (processed.length === 0) return null;
+  const autoApproved = processed.filter((inv) => inv.status === "Matched").length;
+  return Math.round((autoApproved / processed.length) * 1000) / 10;
+}
+
+// Average days between a requisition's creation and its PO's creation,
+// joined client-side on requisitionId the same way
+// getConvertedRequisitionIds() already does (chatbot and po_generation are
+// separate services/DBs, so there's no single query that can join them).
+export async function getAvgCycleTime(): Promise<number | null> {
+  const [requisitions, purchaseOrders] = await Promise.all([getRequisitions(), getPurchaseOrders()]);
+  const requisitionById = new Map(requisitions.map((r) => [r.id, r]));
+
+  const cycleDays: number[] = [];
+  for (const po of purchaseOrders) {
+    const req = requisitionById.get(po.requisitionId);
+    if (!req) continue;
+    const days = (new Date(po.createdDate).getTime() - new Date(req.createdDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (days >= 0) cycleDays.push(days);
+  }
+
+  if (cycleDays.length === 0) return null;
+  return Math.round((cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length) * 10) / 10;
 }
 
 // chatbot's real /chat response, unwrapped as-is -- a one-off reply, not a

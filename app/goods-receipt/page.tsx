@@ -18,15 +18,20 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
   const [quantityInput, setQuantityInput] = React.useState("");
 
   const hasDelivery = delivery.receivedQty !== null;
+  const isFullyReceived = delivery.status === "Fully Received";
   const pct = hasDelivery ? Math.round(((delivery.receivedQty ?? 0) / delivery.orderedQty) * 100) : 0;
 
   const handleReceive = async () => {
     setIsReceiving(true);
     setError(null);
     try {
-      const override = quantityInput.trim() === "" ? undefined : Number(quantityInput);
-      const res = await receiveDelivery(delivery.id, override);
+      // The input is this delivery's increment (added to whatever's already
+      // been received, capped at ordered qty) -- left blank delivers
+      // everything still outstanding in one click.
+      const increment = quantityInput.trim() === "" ? undefined : Number(quantityInput);
+      const res = await receiveDelivery(delivery.id, increment);
       setResult(res);
+      setQuantityInput("");
       onReceived();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to record delivery");
@@ -81,21 +86,18 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
         </p>
 
         {result && (
-          <Badge variant={result.variance_applied ? "warning" : "success"} className="w-full justify-center py-1.5">
-            {result.variance_applied ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
-            Received {result.quantity_received.toLocaleString()} units
-            {result.variance_applied
-              ? ` (${result.variance_pct > 0 ? "+" : ""}${result.variance_pct}% vs ordered)`
-              : " — matches order"}
+          <Badge variant={isFullyReceived ? "success" : "warning"} className="w-full justify-center py-1.5">
+            {isFullyReceived ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+            Received {result.quantity_received.toLocaleString()} / {delivery.orderedQty.toLocaleString()} total
           </Badge>
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        {!hasDelivery && (
+        {!isFullyReceived && (
           <Input
             type="number"
             min={0}
-            placeholder="Actual qty (optional)"
+            placeholder="This delivery's qty (blank = remaining)"
             value={quantityInput}
             onChange={(e) => setQuantityInput(e.target.value)}
             disabled={isReceiving}
@@ -103,20 +105,27 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
           />
         )}
 
-        <Button className="w-full" disabled={hasDelivery || isReceiving} onClick={handleReceive}>
+        <Button className="w-full" disabled={isFullyReceived || isReceiving} onClick={handleReceive}>
           <PackageCheck size={15} />
-          {hasDelivery ? "Delivery Recorded" : isReceiving ? "Recording..." : "Receive Goods"}
+          {isFullyReceived ? "Fully Received" : isReceiving ? "Recording..." : "Record Delivery"}
         </Button>
       </CardContent>
     </Card>
   );
 }
 
+// Only POs actually sent to a supplier are awaiting delivery here -- a
+// Draft PO hasn't gone anywhere yet, and a Cancelled one never will.
+const ELIGIBLE_PO_STATUSES = new Set(["Sent", "Acknowledged", "Partially Received", "Completed"]);
+
 export default function GoodsReceiptPage() {
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
 
-  const loadDeliveries = React.useCallback(() => getDeliveries().then(setDeliveries), []);
+  const loadDeliveries = React.useCallback(
+    () => getDeliveries().then((all) => setDeliveries(all.filter((d) => ELIGIBLE_PO_STATUSES.has(d.poStatus)))),
+    []
+  );
 
   React.useEffect(() => {
     loadDeliveries().finally(() => setIsLoading(false));

@@ -8,13 +8,10 @@ SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from validate import within_tolerance  # src/validate.py — reused so this stays consistent with three_way_match()
+from validate import within_tolerance, three_way_match  # src/validate.py — reused so this stays consistent
 
 GMP_REQUIRED_CATEGORIES = {"Active Ingredient", "Excipient"}
 MAX_DEFECT_RATE_PCT = 0.05
-
-DELIVERY_VARIANCE_RATE = 0.20
-DELIVERY_VARIANCE_RANGE = (0.10, 0.20)  # 10-20%, clear of validate.py's 2% match tolerance
 
 
 def _available_capacity(supplier: dict) -> float:
@@ -86,44 +83,64 @@ def generate_po(requisition: dict, supplier: dict) -> dict:
     }
 
 
-def simulate_delivery(
-    po_id: str, quantity_ordered: float, quantity_received_override: float | None = None
-) -> dict:
-    """
-    Synthetic goods-receipt generator. If quantity_received_override is
-    given, it's used exactly and the random logic is skipped entirely --
-    lets a demo deliberately produce a specific mismatch instead of
-    waiting for the random path to land on one. Otherwise: ~80% of
-    deliveries arrive exactly as ordered; the rest deliberately short- or
-    over-deliver by 10-20% (chosen to sit well clear of validate.py's 2%
-    three_way_match tolerance, so these cases reliably flag rather than
-    landing in ambiguous territory).
-    """
-    if quantity_received_override is not None:
-        quantity_received = quantity_received_override
-    elif random.random() < DELIVERY_VARIANCE_RATE:
-        pct = random.uniform(*DELIVERY_VARIANCE_RANGE)
-        sign = random.choice([-1, 1])
-        quantity_received = round(quantity_ordered * (1 + sign * pct), 2)
-    else:
-        quantity_received = quantity_ordered
+# Goods-receipt recording moved to src/database.py::record_delivery() --
+# accumulating received quantity per PO (capped at quantity_ordered) is
+# inherently stateful, so it lives with persistence rather than as a pure
+# function here. po_generation/main.py calls it directly.
 
-    # Computed once from the actual (settled) quantity_received, regardless
-    # of which path produced it -- one formula, not separate bookkeeping
-    # per path.
-    variance_applied = quantity_received != quantity_ordered
-    variance_pct = round((quantity_received - quantity_ordered) / quantity_ordered * 100, 2) if quantity_ordered else 0.0
+
+INVOICE_LARGE_VARIANCE_RATE = 0.25  # fraction of invoices that get a tolerance-breaking variance
+INVOICE_SMALL_VARIANCE_RANGE = (0.0, 0.015)   # comfortably inside MATCH_TOLERANCE_PERCENT (2%)
+INVOICE_LARGE_VARIANCE_RANGE = (0.05, 0.15)   # e.g. a real freight surcharge or short-ship dispute
+
+
+def _jittered(value: float, variance_range: tuple[float, float]) -> float:
+    pct = random.uniform(*variance_range)
+    sign = random.choice([-1, 1])
+    return round(value * (1 + sign * pct), 2)
+
+
+def generate_synthetic_invoice(po: dict, gr: dict) -> dict:
+    """
+    Builds an invoice's numbers FROM the PO's and GR's own real values, with
+    a small controlled variance, instead of from OCR run against unrelated
+    sample images (which is how invoice amounts previously ended up in a
+    completely different numeric universe than their PO, e.g. 500,000 vs
+    600). 75% of invoices stay inside MATCH_TOLERANCE_PERCENT so they land
+    "Approved"; 25% get a larger jitter so they land "Flagged_For_Review" --
+    same reused three_way_match() the Matching page already relies on, so
+    match_status here can never drift from what that page displays.
+    """
+    variance_range = (
+        INVOICE_LARGE_VARIANCE_RANGE if random.random() < INVOICE_LARGE_VARIANCE_RATE
+        else INVOICE_SMALL_VARIANCE_RANGE
+    )
+
+    quantity_ordered = _jittered(po["quantity_ordered"], variance_range)
+    quantity_received = _jittered(gr["quantity_received"], variance_range)
+    expected_total = po["price_per_unit"] * quantity_received
+    total_amount = _jittered(expected_total, variance_range)
+
+    extracted_data = {
+        "quantity_ordered": quantity_ordered,
+        "quantity_received": quantity_received,
+        "total_amount": total_amount,
+    }
+    match_status, issues = three_way_match(extracted_data, po, gr)
 
     return {
-        "gr_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
-        "po_id": po_id,
-        "quantity_received": quantity_received,
-        "status": "Validated",
-        # not persisted to goods_receipts (not part of its schema) — surfaced
-        # in the API response only, for demo transparency
+        "invoice_id": f"INV-{uuid.uuid4().hex[:8].upper()}",
+        "po_id": po["po_id"],
+        "gr_id": gr["gr_id"],
+        "item_name": po["item_name"],
         "quantity_ordered": quantity_ordered,
-        "variance_applied": variance_applied,
-        "variance_pct": variance_pct,
+        "quantity_received": quantity_received,
+        "price_per_unit": po["price_per_unit"],
+        "total_amount": total_amount,
+        "extraction_status": "Extracted",
+        "match_status": match_status,
+        "printable_path": None,
+        "issues": issues,  # not persisted (not an invoices column) — surfaced in the API response only
     }
 
 
