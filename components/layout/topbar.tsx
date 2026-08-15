@@ -2,6 +2,7 @@
 import { Bell, Menu, Moon, Search, Sun, ChevronDown, LogOut, UserCircle, HelpCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "@/components/layout/theme-provider";
+import { useGlobalSearch } from "@/components/layout/search-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, toggleTheme } = useTheme();
+  const { query, setQuery } = useGlobalSearch();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur">
@@ -31,6 +33,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         <Input
           placeholder="Search POs, requisitions, suppliers, invoices..."
           className="pl-8"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
       </div>
 

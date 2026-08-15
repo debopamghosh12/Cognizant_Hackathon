@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from .generator import generate_po, generate_synthetic_invoice, build_match_rows
+from . import predictive
 from .schemas import (
     GeneratePORequest, POResponse, GoodsReceiptResponse, SimulateDeliveryRequest,
     InvoiceResponse, InvoiceDecisionRequest,
@@ -76,6 +77,9 @@ def generate_invoice_endpoint(po_id: str):
         raise HTTPException(status_code=400, detail=f"purchase order '{po_id}' has no goods receipt yet")
 
     invoice = generate_synthetic_invoice(po, gr)
+    anomaly = predictive.compute_invoice_anomaly(invoice, po["supplier_id"])
+    invoice["is_predictive_anomaly"] = anomaly["is_predictive_anomaly"]
+    invoice["predictive_anomaly_reason"] = anomaly["predictive_anomaly_reason"]
     database.insert_invoice(invoice)
     return invoice
 
@@ -116,6 +120,8 @@ def list_matches_endpoint():
             "match_status": invoice["match_status"],
             "extraction_status": invoice["extraction_status"],
             "rows": build_match_rows(invoice, po, gr),
+            "is_predictive_anomaly": invoice.get("is_predictive_anomaly"),
+            "predictive_anomaly_reason": invoice.get("predictive_anomaly_reason"),
         })
     return results
 

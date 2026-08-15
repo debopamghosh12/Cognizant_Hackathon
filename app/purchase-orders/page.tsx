@@ -7,15 +7,25 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import type { PurchaseOrder } from "@/lib/data";
-import { getPurchaseOrders, sendPurchaseOrder } from "@/lib/api";
+import type { PurchaseOrder, Supplier } from "@/lib/data";
+import { getPurchaseOrders, sendPurchaseOrder, getSupplierForPO } from "@/lib/api";
+import { getDeliveryRisk, type DeliveryRiskLevel } from "@/lib/anomaly-detection";
 import { formatCurrency } from "@/lib/utils";
+import { useGlobalSearch } from "@/components/layout/search-context";
+
+const RISK_BADGE_VARIANT: Record<DeliveryRiskLevel, "success" | "warning" | "destructive"> = {
+  Low: "success",
+  Medium: "warning",
+  High: "destructive",
+};
 
 export default function PurchaseOrdersPage() {
+  const { query } = useGlobalSearch();
   const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [selected, setSelected] = React.useState<PurchaseOrder | null>(null);
   const [isSending, setIsSending] = React.useState(false);
+  const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null | undefined>(undefined);
 
   const loadPurchaseOrders = React.useCallback((preserveSelectedId?: string) => {
     return getPurchaseOrders().then((data) => {
@@ -29,6 +39,12 @@ export default function PurchaseOrdersPage() {
     loadPurchaseOrders().finally(() => setIsLoading(false));
   }, [loadPurchaseOrders]);
 
+  React.useEffect(() => {
+    if (!selected) return;
+    setSelectedSupplier(undefined);
+    getSupplierForPO(selected).then(setSelectedSupplier);
+  }, [selected]);
+
   async function handleSendToSupplier() {
     if (!selected) return;
     setIsSending(true);
@@ -39,6 +55,12 @@ export default function PurchaseOrdersPage() {
       setIsSending(false);
     }
   }
+
+  const filteredPOs = purchaseOrders.filter((po) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return po.id.toLowerCase().includes(q) || po.supplier.toLowerCase().includes(q) || po.items.toLowerCase().includes(q);
+  });
 
   return (
     <div className="animate-fade-in">
@@ -60,7 +82,7 @@ export default function PurchaseOrdersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {purchaseOrders.map((po) => (
+              {filteredPOs.map((po) => (
                 <TableRow
                   key={po.id}
                   onClick={() => setSelected(po)}
@@ -86,10 +108,14 @@ export default function PurchaseOrdersPage() {
                   <TableCell className="text-right font-medium">{formatCurrency(po.amount)}</TableCell>
                 </TableRow>
               ))}
-              {purchaseOrders.length === 0 && (
+              {filteredPOs.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                    {isLoading ? "Loading purchase orders..." : "No purchase orders yet."}
+                    {isLoading
+                      ? "Loading purchase orders..."
+                      : purchaseOrders.length > 0
+                      ? "No purchase orders match your search."
+                      : "No purchase orders yet."}
                   </TableCell>
                 </TableRow>
               )}
@@ -138,6 +164,20 @@ export default function PurchaseOrdersPage() {
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Expected delivery</dt>
                   <dd className="font-medium text-foreground">{selected.expectedDelivery}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt className="text-muted-foreground">Predictive Delivery Risk</dt>
+                  <dd>
+                    {selectedSupplier === undefined ? (
+                      <span className="text-foreground">…</span>
+                    ) : selectedSupplier === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <Badge variant={RISK_BADGE_VARIANT[getDeliveryRisk(selectedSupplier.onTimeDelivery)]}>
+                        {getDeliveryRisk(selectedSupplier.onTimeDelivery)} ({selectedSupplier.onTimeDelivery}% on-time)
+                      </Badge>
+                    )}
+                  </dd>
                 </div>
                 <div className="flex justify-between border-t border-border pt-2 text-sm">
                   <dt className="font-semibold text-foreground">Total amount</dt>

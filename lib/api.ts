@@ -1,4 +1,5 @@
 import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval } from "@/lib/data";
+import { getDeliveryRisk, isAtRisk, getReliabilityTrend, type ReliabilityTrend } from "@/lib/anomaly-detection";
 
 interface RawRequisition {
   id: number;
@@ -144,6 +145,17 @@ export async function findBestSupplier(skuId: string): Promise<Supplier | null> 
   return candidates[0] ?? null;
 }
 
+// Predictive Delivery Risk needs the exact supplier-SKU row a PO was
+// actually placed against. Deliberately uses getSuppliersForSku(), NOT the
+// collapsed getSuppliers() -- that endpoint picks one row per company by
+// max suitability_score across ALL their SKUs, which can silently surface
+// a different SKU's on_time_delivery_pct for the same supplier_id.
+// po.items holds the sku_id (see transformPurchaseOrder() below).
+export async function getSupplierForPO(po: PurchaseOrder): Promise<Supplier | null> {
+  const candidates = await getSuppliersForSku(po.items);
+  return candidates.find((s) => s.id === po.supplier) ?? null;
+}
+
 export interface GeneratePOResult {
   po_id: string;
   item_name: string;
@@ -230,6 +242,13 @@ const PO_STATUS_MAP: Record<string, POStatus> = {
   Open: "Draft",
   Sent: "Sent",
   Validated: "Acknowledged",
+  // Both already stored as these exact raw values (update_po_status() /
+  // update_invoice_decision()'s reject path) -- missing identity entries
+  // here meant any PO actually "Cancelled" silently displayed as "Draft"
+  // instead, since the ?? "Draft" fallback below caught every unmapped
+  // raw status, not just genuinely unexpected ones.
+  Cancelled: "Cancelled",
+  Completed: "Completed",
 };
 
 function computeExpectedDate(createdAt: string, leadTimeDays: number): Date {
@@ -286,6 +305,12 @@ export interface InvoiceMatch {
   match_status: string | null;
   extraction_status: string;
   rows: MatchRow[];
+  // Predictive Anomaly Detection (po_generation/predictive.py) -- distinct
+  // from match_status/rows above, which come from the reactive 3-way-match
+  // tolerance check. No response_model on GET /matches, so these arrive as
+  // raw SQLite 0/1, not real booleans -- coerce with Boolean(...), not ===.
+  is_predictive_anomaly?: boolean | number;
+  predictive_anomaly_reason?: string | null;
 }
 
 export async function getInvoiceMatches(): Promise<InvoiceMatch[]> {
@@ -391,6 +416,10 @@ interface RawInvoice {
   extraction_status: "Failed" | "Incomplete" | "Extracted";
   match_status: "Flagged_For_Review" | "Approved" | "Approved_Manual" | "Rejected" | "Escalated" | "Awaiting_Goods_Receipt" | null;
   printable_path: string | null;
+  // No response_model on GET /invoices, so this arrives as raw SQLite 0/1
+  // (not a real boolean) -- coerce with Boolean(...) in transformInvoice.
+  is_predictive_anomaly?: boolean | number;
+  predictive_anomaly_reason?: string | null;
 }
 
 function deriveInvoiceStatus(raw: RawInvoice): InvoiceStatus {
@@ -421,6 +450,8 @@ function transformInvoice(raw: RawInvoice): InvoiceRecord {
     amount: raw.total_amount,
     status: deriveInvoiceStatus(raw),
     printablePath: raw.printable_path,
+    isPredictiveAnomaly: Boolean(raw.is_predictive_anomaly),
+    predictiveAnomalyReason: raw.predictive_anomaly_reason ?? null,
   };
 }
 
@@ -524,6 +555,48 @@ export async function getAvgCycleTime(): Promise<number | null> {
 
   if (cycleDays.length === 0) return null;
   return Math.round((cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length) * 10) / 10;
+}
+
+const OPEN_PO_STATUSES: POStatus[] = ["Draft", "Sent", "Acknowledged", "Partially Received"];
+
+// Dashboard "At-Risk POs" card (lib/anomaly-detection.ts::getDeliveryRisk()).
+// Resolves each open PO to its real supplier via getSupplierForPO() (not
+// the collapsed getSuppliers()) so risk reflects the SKU actually on that
+// PO, not whichever SKU the supplier happens to score highest on elsewhere.
+export async function getAtRiskPOCount(): Promise<number> {
+  const purchaseOrders = await getPurchaseOrders();
+  const openPOs = purchaseOrders.filter((po) => OPEN_PO_STATUSES.includes(po.status));
+  const suppliers = await Promise.all(openPOs.map(getSupplierForPO));
+  return suppliers.filter((s) => s != null && isAtRisk(getDeliveryRisk(s.onTimeDelivery))).length;
+}
+
+// Suppliers page reliability trend warning (lib/anomaly-detection.ts::
+// getReliabilityTrend()). Only suppliers with >=2 real, non-cancelled POs
+// get an entry in the returned map -- callers should treat "no entry" as
+// "show nothing", not a placeholder.
+export async function getSupplierReliabilityTrends(): Promise<Map<string, ReliabilityTrend>> {
+  const [purchaseOrders, deliveries] = await Promise.all([getPurchaseOrders(), getDeliveries()]);
+  const deliveryByPoId = new Map(deliveries.map((d) => [d.id, d]));
+
+  const bySupplier = new Map<string, PurchaseOrder[]>();
+  for (const po of purchaseOrders) {
+    if (po.status === "Draft" || po.status === "Cancelled") continue;
+    const group = bySupplier.get(po.supplier) ?? [];
+    group.push(po);
+    bySupplier.set(po.supplier, group);
+  }
+
+  const trends = new Map<string, ReliabilityTrend>();
+  for (const [supplierId, pos] of bySupplier) {
+    const recentStatuses = [...pos]
+      .sort((a, b) => new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime())
+      .slice(0, 3)
+      .map((po) => deliveryByPoId.get(po.id)?.status)
+      .filter((s): s is DeliveryStatus => s != null);
+    const trend = getReliabilityTrend(recentStatuses);
+    if (trend) trends.set(supplierId, trend);
+  }
+  return trends;
 }
 
 // chatbot's real /chat response, unwrapped as-is -- a one-off reply, not a

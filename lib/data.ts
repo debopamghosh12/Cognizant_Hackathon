@@ -117,6 +117,11 @@ export interface InvoiceRecord {
   amount: number | null;
   status: InvoiceStatus;
   printablePath: string | null;
+  // Predictive Anomaly Detection -- distinct from `status` above (which is
+  // derived from the reactive 3-way-match tolerance check). This flags
+  // deviation from THIS supplier's own historical invoice pattern instead.
+  isPredictiveAnomaly?: boolean;
+  predictiveAnomalyReason?: string | null;
 }
 
 // `invoices` used to be a static mock array here (with tax/invoiceDate/

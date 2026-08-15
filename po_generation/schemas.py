@@ -78,3 +78,5 @@ class InvoiceResponse(BaseModel):
     extraction_status: str
     match_status: str
     printable_path: Optional[str] = None
+    is_predictive_anomaly: bool = False
+    predictive_anomaly_reason: Optional[str] = None

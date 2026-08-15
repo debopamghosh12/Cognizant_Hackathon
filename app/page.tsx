@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { FileClock, Bot, ScanText, GitCompareArrows, Zap } from "lucide-react";
+import { FileClock, Bot, ScanText, GitCompareArrows, Zap, AlertTriangle } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -26,7 +26,7 @@ import {
   recentActivity,
   touchlessTrend,
 } from "@/lib/data";
-import { getRequisitions, getPurchaseOrders, getInvoiceMatches, getInvoices, getAutomationRate } from "@/lib/api";
+import { getRequisitions, getPurchaseOrders, getInvoiceMatches, getInvoices, getAutomationRate, getAtRiskPOCount } from "@/lib/api";
 
 export default function DashboardPage() {
   const [totalRequisitions, setTotalRequisitions] = React.useState<number | null>(null);
@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [matchRate, setMatchRate] = React.useState<number | null | undefined>(undefined);
   const [ocrSuccessRate, setOcrSuccessRate] = React.useState<number | null | undefined>(undefined);
   const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
+  const [atRiskPOs, setAtRiskPOs] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     getRequisitions().then((r) => setTotalRequisitions(r.length));
@@ -54,6 +55,7 @@ export default function DashboardPage() {
       setOcrSuccessRate(Math.round((extracted / invoices.length) * 1000) / 10);
     });
     getAutomationRate().then(setAutomationRate);
+    getAtRiskPOCount().then(setAtRiskPOs);
   }, []);
 
   return (
@@ -63,7 +65,7 @@ export default function DashboardPage() {
         description="Real-time visibility into your autonomous procure-to-pay pipeline"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           label="Total Requisitions"
           value={totalRequisitions === null ? "…" : totalRequisitions.toString()}
@@ -87,6 +89,13 @@ export default function DashboardPage() {
           value={matchRate === undefined ? "…" : matchRate === null ? "—" : `${matchRate}%`}
           icon={GitCompareArrows}
           accent="bg-green-50 text-green-600 dark:bg-green-500/10"
+        />
+        <KpiCard
+          label="At-Risk POs"
+          value={atRiskPOs === null ? "…" : atRiskPOs.toString()}
+          icon={AlertTriangle}
+          accent="bg-red-50 text-red-600 dark:bg-red-500/10"
+          note="Predictive — Medium/High delivery risk"
         />
       </div>
 

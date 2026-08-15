@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Info, Download, FileText, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,8 +17,11 @@ import {
 import type { InvoiceRecord, Delivery } from "@/lib/data";
 import { getInvoices, getDeliveries, generateInvoice } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { useGlobalSearch } from "@/components/layout/search-context";
 
 export default function InvoicesPage() {
+  const router = useRouter();
+  const { query } = useGlobalSearch();
   const [invoices, setInvoices] = React.useState<InvoiceRecord[]>([]);
   const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -42,6 +46,16 @@ export default function InvoicesPage() {
   const eligiblePOs = deliveries.filter(
     (d) => (d.status === "Partially Received" || d.status === "Fully Received") && !invoicedPoIds.has(d.id)
   );
+
+  const filteredInvoices = invoices.filter((inv) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      inv.id.toLowerCase().includes(q) ||
+      inv.poId.toLowerCase().includes(q) ||
+      inv.supplier.toLowerCase().includes(q)
+    );
+  });
 
   async function handleGenerate(poId: string) {
     setIsGenerating(true);
@@ -120,8 +134,12 @@ export default function InvoicesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((inv) => (
-              <TableRow key={inv.id}>
+            {filteredInvoices.map((inv) => (
+              <TableRow
+                key={inv.id}
+                onClick={() => router.push(`/matching?invoice=${inv.id}`)}
+                className="cursor-pointer"
+              >
                 <TableCell className="font-medium text-primary-700 dark:text-primary-400">{inv.id}</TableCell>
                 <TableCell>{inv.supplier}</TableCell>
                 <TableCell className="text-muted-foreground">{inv.poId}</TableCell>
@@ -130,9 +148,16 @@ export default function InvoicesPage() {
                   {inv.amount !== null ? formatCurrency(inv.amount) : "—"}
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status={inv.status} />
+                  <div className="flex flex-wrap items-center gap-1">
+                    <StatusBadge status={inv.status} />
+                    {inv.isPredictiveAnomaly && (
+                      <span title={inv.predictiveAnomalyReason ?? undefined}>
+                        <StatusBadge status="Predictive Anomaly" />
+                      </span>
+                    )}
+                  </div>
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   {inv.printablePath && (
                     <a
                       href={`/api/invoices/${inv.id}/pdf`}
@@ -144,10 +169,10 @@ export default function InvoicesPage() {
                 </TableCell>
               </TableRow>
             ))}
-            {invoices.length === 0 && (
+            {filteredInvoices.length === 0 && (
               <TableRow>
                 <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                  {isLoading ? "Loading invoices..." : "No invoices processed yet."}
+                  {isLoading ? "Loading invoices..." : query ? "No invoices match your search." : "No invoices processed yet."}
                 </TableCell>
               </TableRow>
             )}

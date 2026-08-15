@@ -16,9 +16,21 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import type { Supplier, Requisition } from "@/lib/data";
-import { getSuppliers, getRequisitions, getConvertedRequisitionIds, generatePO } from "@/lib/api";
+import { getSuppliers, getRequisitions, getConvertedRequisitionIds, generatePO, getSupplierReliabilityTrends } from "@/lib/api";
+import type { ReliabilityTrend } from "@/lib/anomaly-detection";
+import { useGlobalSearch } from "@/components/layout/search-context";
 
-function SupplierCard({ supplier, requisitions }: { supplier: Supplier; requisitions: Requisition[] }) {
+function SupplierCard({
+  supplier,
+  requisitions,
+  trend,
+}: {
+  supplier: Supplier;
+  requisitions: Requisition[];
+  // Only real, non-cancelled PO history yields an entry -- no entry means
+  // "show nothing" (see getSupplierReliabilityTrends()), never a placeholder.
+  trend?: ReliabilityTrend;
+}) {
   const router = useRouter();
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -85,6 +97,8 @@ function SupplierCard({ supplier, requisitions }: { supplier: Supplier; requisit
           </Badge>
         </div>
 
+        {trend && <p className="text-xs text-amber-600 dark:text-amber-400">⚠ {trend.warning}</p>}
+
         {error && <p className="text-xs text-red-600">{error}</p>}
 
         {matching.length === 0 ? (
@@ -120,20 +134,29 @@ function SupplierCard({ supplier, requisitions }: { supplier: Supplier; requisit
 }
 
 export default function SuppliersPage() {
+  const { query } = useGlobalSearch();
   const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([]);
+  const [trends, setTrends] = React.useState<Map<string, ReliabilityTrend>>(new Map());
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    Promise.all([getSuppliers(), getRequisitions(), getConvertedRequisitionIds()])
-      .then(([s, reqs, convertedIds]) => {
+    Promise.all([getSuppliers(), getRequisitions(), getConvertedRequisitionIds(), getSupplierReliabilityTrends()])
+      .then(([s, reqs, convertedIds, supplierTrends]) => {
         setSuppliers(s);
         setRequisitions(
           reqs.map((r) => (convertedIds.has(r.id) ? { ...r, status: "CONVERTED_TO_PO" as const } : r))
         );
+        setTrends(supplierTrends);
       })
       .finally(() => setIsLoading(false));
   }, []);
+
+  const filteredSuppliers = suppliers.filter((s) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || s.category.toLowerCase().includes(q) || s.skuId.toLowerCase().includes(q);
+  });
 
   return (
     <div className="animate-fade-in">
@@ -146,10 +169,15 @@ export default function SuppliersPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {suppliers.map((s) => (
-          <SupplierCard key={s.id} supplier={s} requisitions={requisitions} />
+        {filteredSuppliers.map((s) => (
+          <SupplierCard key={s.id} supplier={s} requisitions={requisitions} trend={trends.get(s.id)} />
         ))}
       </div>
+      {!isLoading && filteredSuppliers.length === 0 && (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          {suppliers.length > 0 ? "No suppliers match your search." : "No suppliers found."}
+        </p>
+      )}
     </div>
   );
 }

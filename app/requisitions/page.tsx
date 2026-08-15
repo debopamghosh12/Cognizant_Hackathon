@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Requisition } from "@/lib/data";
 import { getRequisitions, getConvertedRequisitionIds, findBestSupplier, generatePO } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { useGlobalSearch } from "@/components/layout/search-context";
 
 const statusFilters = ["All", "PENDING", "APPROVED", "AUTO_APPROVED", "REJECTED", "CONVERTED_TO_PO"];
 
@@ -27,6 +28,7 @@ export default function RequisitionsPage() {
 function RequisitionsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { query: globalQuery } = useGlobalSearch();
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
@@ -71,13 +73,24 @@ function RequisitionsPageContent() {
     }
   }
 
+  // Matches this page's own search box AND (independently) the Topbar's
+  // global search -- both are substring filters over the same fields, so a
+  // query typed in either box narrows the table.
+  function matchesFields(r: Requisition, q: string): boolean {
+    if (!q.trim()) return true;
+    const needle = q.toLowerCase();
+    return (
+      r.id.toLowerCase().includes(needle) ||
+      r.itemName.toLowerCase().includes(needle) ||
+      r.sku.toLowerCase().includes(needle) ||
+      r.requester.toLowerCase().includes(needle) ||
+      r.sourceWarehouse.toLowerCase().includes(needle) ||
+      r.destinationDC.toLowerCase().includes(needle)
+    );
+  }
+
   const filtered = requisitions.filter((r) => {
-    const matchesQuery =
-      r.id.toLowerCase().includes(query.toLowerCase()) ||
-      r.itemName.toLowerCase().includes(query.toLowerCase()) ||
-      r.requester.toLowerCase().includes(query.toLowerCase()) ||
-      r.sourceWarehouse.toLowerCase().includes(query.toLowerCase()) ||
-      r.destinationDC.toLowerCase().includes(query.toLowerCase());
+    const matchesQuery = matchesFields(r, query) && matchesFields(r, globalQuery);
     const matchesStatus = status === "All" || r.status === status;
     return matchesQuery && matchesStatus;
   });

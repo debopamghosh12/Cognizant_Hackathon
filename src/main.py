@@ -1,6 +1,6 @@
 import os
 import uuid
-from database import get_connection, init_db, insert_dummy_po_and_gr, list_purchase_orders
+from database import get_connection, init_db, insert_dummy_po_and_gr, list_purchase_orders, get_invoice_by_po
 from extract import extract_invoice_data
 from validate import has_missing_fields, three_way_match
 from generate_invoice import generate_printable_invoice
@@ -80,8 +80,20 @@ if __name__ == "__main__":
             "again with SEED_DUMMY_DATA=true to seed a dummy PO/GR for "
             "standalone testing."
         )
-    po_id = existing_pos[0]["po_id"]
-    print(f"Using most recent purchase order: {po_id}")
+
+    # Picking existing_pos[0] (most recent) unconditionally used to dump a
+    # batch of OCR-derived invoices onto whatever PO was newest, even if it
+    # already had a real invoice from po_generation's live /generate-invoice
+    # endpoint -- that's how PO-BB6591C6 ended up with 12 duplicate/garbage
+    # rows alongside its one correct invoice. Skip any PO that already has
+    # one, same rule the live endpoint enforces (409 on a second attempt).
+    po_id = next((po["po_id"] for po in existing_pos if get_invoice_by_po(po["po_id"]) is None), None)
+    if po_id is None:
+        raise SystemExit(
+            "Every purchase order already has an invoice -- this legacy OCR "
+            "script only targets a PO with none yet. Generate a new PO first."
+        )
+    print(f"Using purchase order without an existing invoice: {po_id}")
 
     for filename in os.listdir(SAMPLE_INVOICE_DIR):
         if filename.lower().endswith((".jpg", ".jpeg", ".png")):

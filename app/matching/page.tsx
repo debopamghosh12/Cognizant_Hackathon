@@ -1,13 +1,22 @@
 "use client";
 import * as React from "react";
-import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send, Loader2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send, Loader2, ChevronDown } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { getInvoiceMatches, type InvoiceMatch } from "@/lib/api";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 const EXTRACTION_STATUS_LABEL: Record<string, string> = {
   Failed: "OCR extraction failed completely for this invoice.",
@@ -15,15 +24,35 @@ const EXTRACTION_STATUS_LABEL: Record<string, string> = {
 };
 
 export default function MatchingPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <MatchingPageContent />
+    </React.Suspense>
+  );
+}
+
+function MatchingPageContent() {
+  const searchParams = useSearchParams();
   const [matches, setMatches] = React.useState<InvoiceMatch[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  // Explicit user pick (via the "Invoice" dropdown below, or arriving from
+  // Invoice Processing's "?invoice=" link) takes priority over the default
+  // matches[0] -- previously this page always defaulted to an arbitrary
+  // invoice with no way to pick a specific one.
+  const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(null);
 
   const loadMatches = React.useCallback(() => getInvoiceMatches().then(setMatches), []);
 
   React.useEffect(() => {
     loadMatches().finally(() => setIsLoading(false));
   }, [loadMatches]);
+
+  React.useEffect(() => {
+    const fromQuery = searchParams.get("invoice");
+    if (fromQuery) setSelectedInvoiceId(fromQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleAutoMatch() {
     setIsRefreshing(true);
@@ -34,7 +63,7 @@ export default function MatchingPage() {
     }
   }
 
-  const selected = matches[0] ?? null;
+  const selected = (selectedInvoiceId && matches.find((m) => m.invoice_id === selectedInvoiceId)) || matches[0] || null;
   const rows = selected?.rows ?? [];
   const matchScore = rows.length > 0 ? Math.round((rows.filter((r) => r.match).length / rows.length) * 100) : 0;
 
@@ -52,6 +81,21 @@ export default function MatchingPage() {
         description="Cross-verify purchase order, goods receipt and invoice data before payment"
         action={
           <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={matches.length === 0}>
+                  {selected?.invoice_id ?? "Select invoice"} <ChevronDown size={14} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuLabel>Compare a specific invoice</DropdownMenuLabel>
+                {matches.map((m) => (
+                  <DropdownMenuItem key={m.invoice_id} onClick={() => setSelectedInvoiceId(m.invoice_id)}>
+                    {m.invoice_id} · {m.po_id}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" size="sm">
               <Send size={15} /> Send for Review
             </Button>
@@ -87,7 +131,15 @@ export default function MatchingPage() {
               <Badge variant={matchScore >= 90 ? "success" : "warning"} className="text-sm">
                 {matchScore >= 90 ? "Auto-Approvable" : "Needs Review"}
               </Badge>
+              {Boolean(selected?.is_predictive_anomaly) && (
+                <StatusBadge status="Predictive Anomaly" />
+              )}
             </div>
+          )}
+          {Boolean(selected?.is_predictive_anomaly) && selected?.predictive_anomaly_reason && (
+            <p className="w-full text-xs text-muted-foreground sm:text-right">
+              {selected.predictive_anomaly_reason}
+            </p>
           )}
         </CardContent>
       </Card>

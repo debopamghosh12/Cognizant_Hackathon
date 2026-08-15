@@ -54,6 +54,7 @@ def init_db():
     conn.close()
 
     _ensure_po_columns()
+    _ensure_invoice_columns()
     print("Database initialized.")
 
 def _ensure_po_columns():
@@ -73,6 +74,22 @@ def _ensure_po_columns():
     for name, col_type in new_columns.items():
         if name not in existing:
             cur.execute(f"ALTER TABLE purchase_orders ADD COLUMN {name} {col_type}")
+    conn.commit()
+    conn.close()
+
+def _ensure_invoice_columns():
+    """Additive migration: adds Predictive Anomaly columns to an
+    already-existing invoices table if they aren't there yet."""
+    conn = get_connection()
+    cur = conn.cursor()
+    existing = {row[1] for row in cur.execute("PRAGMA table_info(invoices)")}
+    new_columns = {
+        "is_predictive_anomaly": "INTEGER DEFAULT 0",
+        "predictive_anomaly_reason": "TEXT",
+    }
+    for name, col_type in new_columns.items():
+        if name not in existing:
+            cur.execute(f"ALTER TABLE invoices ADD COLUMN {name} {col_type}")
     conn.commit()
     conn.close()
 
@@ -214,13 +231,16 @@ def insert_invoice(invoice: dict) -> str:
     cur.execute("""
         INSERT INTO invoices
             (invoice_id, po_id, gr_id, item_name, quantity_ordered, quantity_received,
-             price_per_unit, total_amount, extraction_status, match_status, printable_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             price_per_unit, total_amount, extraction_status, match_status, printable_path,
+             is_predictive_anomaly, predictive_anomaly_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         invoice["invoice_id"], invoice["po_id"], invoice.get("gr_id"), invoice["item_name"],
         invoice["quantity_ordered"], invoice["quantity_received"], invoice["price_per_unit"],
         invoice["total_amount"], invoice["extraction_status"], invoice["match_status"],
         invoice.get("printable_path"),
+        int(bool(invoice.get("is_predictive_anomaly", False))),
+        invoice.get("predictive_anomaly_reason"),
     ))
     conn.commit()
     conn.close()
@@ -233,6 +253,21 @@ def get_invoice_by_po(po_id: str) -> dict | None:
     row = cur.execute("SELECT * FROM invoices WHERE po_id=?", (po_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+def list_invoices_by_supplier(supplier_id: str) -> list[dict]:
+    """The only path to a supplier's invoice history -- invoices has no
+    supplier_id column of its own, only po_id, so this joins through
+    purchase_orders."""
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT invoices.* FROM invoices
+        JOIN purchase_orders ON invoices.po_id = purchase_orders.po_id
+        WHERE purchase_orders.supplier_id = ?
+    """, (supplier_id,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def update_invoice_decision(invoice_id: str, match_status: str, po_status: str | None = None) -> dict | None:
     conn = get_connection()
