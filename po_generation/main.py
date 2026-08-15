@@ -32,7 +32,10 @@ def generate_po_endpoint(body: GeneratePORequest):
 
 @app.get("/purchase-orders")
 def list_purchase_orders_endpoint():
-    return database.list_purchase_orders()
+    pos = database.list_purchase_orders()
+    for po in pos:
+        po["goods_receipt"] = database.get_goods_receipt_by_po(po["po_id"])
+    return pos
 
 
 @app.post("/simulate-delivery/{po_id}", response_model=GoodsReceiptResponse, status_code=201)

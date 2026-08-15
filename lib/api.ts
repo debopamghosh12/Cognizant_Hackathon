@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus } from "@/lib/data";
 
 interface RawRequisition {
   id: number;
@@ -107,6 +107,13 @@ export async function getSuppliers(): Promise<Supplier[]> {
   return raw.map(transformSupplier);
 }
 
+interface RawGoodsReceipt {
+  gr_id: string;
+  po_id: string;
+  quantity_received: number;
+  status: string;
+}
+
 interface RawPurchaseOrder {
   po_id: string;
   item_name: string;
@@ -120,6 +127,7 @@ interface RawPurchaseOrder {
   lead_time_days: number;
   destination_dc: string;
   created_at: string;
+  goods_receipt: RawGoodsReceipt | null;
 }
 
 // generate_po() (po_generation/generator.py) never sets anything but "Open";
@@ -132,10 +140,14 @@ const PO_STATUS_MAP: Record<string, POStatus> = {
   Validated: "Acknowledged",
 };
 
+function computeExpectedDate(createdAt: string, leadTimeDays: number): Date {
+  const expected = new Date(createdAt);
+  expected.setDate(expected.getDate() + (leadTimeDays ?? 0));
+  return expected;
+}
+
 function transformPurchaseOrder(raw: RawPurchaseOrder): PurchaseOrder {
-  const createdDate = new Date(raw.created_at);
-  const expectedDelivery = new Date(createdDate);
-  expectedDelivery.setDate(expectedDelivery.getDate() + (raw.lead_time_days ?? 0));
+  const expectedDelivery = computeExpectedDate(raw.created_at, raw.lead_time_days);
 
   return {
     id: raw.po_id,
@@ -177,6 +189,63 @@ export async function getInvoiceMatches(): Promise<InvoiceMatch[]> {
   const res = await fetch("/api/matches");
   if (!res.ok) {
     throw new Error(`Failed to fetch invoice matches: ${res.status}`);
+  }
+  return res.json();
+}
+
+// GET /api/purchase-orders is the same endpoint the Purchase Orders page
+// uses -- po_generation/main.py enriches each row with its goods_receipt
+// (or null), so this is one more consumer of that one endpoint rather
+// than a duplicate "list POs" route.
+const MATCH_TOLERANCE_PERCENT = 2; // mirrors src/validate.py's MATCH_TOLERANCE_PERCENT
+
+function transformDelivery(raw: RawPurchaseOrder): Delivery {
+  const gr = raw.goods_receipt;
+  const expectedDate = computeExpectedDate(raw.created_at, raw.lead_time_days);
+
+  let status: DeliveryStatus = "Awaiting Receipt";
+  let variancePct: number | null = null;
+  if (gr) {
+    variancePct = raw.quantity_ordered === 0 ? 0 : ((gr.quantity_received - raw.quantity_ordered) / raw.quantity_ordered) * 100;
+    status = Math.abs(variancePct) <= MATCH_TOLERANCE_PERCENT ? "Fully Received" : "Partially Received";
+  }
+
+  return {
+    id: raw.po_id,
+    item: raw.item_name,
+    supplier: raw.supplier_id,
+    destinationDC: raw.destination_dc,
+    orderedQty: raw.quantity_ordered,
+    receivedQty: gr ? gr.quantity_received : null,
+    status,
+    expectedDate: expectedDate.toISOString(),
+    variancePct,
+  };
+}
+
+export async function getDeliveries(): Promise<Delivery[]> {
+  const res = await fetch("/api/purchase-orders");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch deliveries: ${res.status}`);
+  }
+  const raw: RawPurchaseOrder[] = await res.json();
+  return raw.map(transformDelivery);
+}
+
+export interface ReceiveDeliveryResult {
+  gr_id: string;
+  po_id: string;
+  quantity_received: number;
+  status: string;
+  quantity_ordered: number;
+  variance_applied: boolean;
+  variance_pct: number;
+}
+
+export async function receiveDelivery(poId: string): Promise<ReceiveDeliveryResult> {
+  const res = await fetch(`/api/simulate-delivery/${poId}`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Failed to record delivery for ${poId}: ${res.status}`);
   }
   return res.json();
 }

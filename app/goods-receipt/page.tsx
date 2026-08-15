@@ -1,74 +1,129 @@
 "use client";
-import { Truck, Warehouse, PackageCheck } from "lucide-react";
+import * as React from "react";
+import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { shipments } from "@/lib/data";
+import type { Delivery } from "@/lib/data";
+import { getDeliveries, receiveDelivery, type ReceiveDeliveryResult } from "@/lib/api";
+
+function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived: () => void }) {
+  const [isReceiving, setIsReceiving] = React.useState(false);
+  const [result, setResult] = React.useState<ReceiveDeliveryResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const hasDelivery = delivery.receivedQty !== null;
+  const pct = hasDelivery ? Math.round(((delivery.receivedQty ?? 0) / delivery.orderedQty) * 100) : 0;
+
+  const handleReceive = async () => {
+    setIsReceiving(true);
+    setError(null);
+    try {
+      const res = await receiveDelivery(delivery.id);
+      setResult(res);
+      onReceived();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to record delivery");
+    } finally {
+      setIsReceiving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-500/10">
+            <Truck size={17} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{delivery.id}</p>
+            <p className="text-xs text-muted-foreground">{delivery.item}</p>
+          </div>
+        </div>
+        <StatusBadge status={delivery.status} />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-foreground">{delivery.supplier}</p>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Warehouse size={13} /> {delivery.destinationDC}
+        </div>
+
+        <div>
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground">Received progress</span>
+            <span className="font-medium text-foreground">{hasDelivery ? `${pct}%` : "—"}</span>
+          </div>
+          <Progress value={pct} className="mt-1.5" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-lg bg-secondary p-3">
+            <p className="text-[11px] text-muted-foreground">Ordered qty</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">{delivery.orderedQty.toLocaleString()}</p>
+          </div>
+          <div className="rounded-lg bg-secondary p-3">
+            <p className="text-[11px] text-muted-foreground">Received qty</p>
+            <p className="mt-1 text-sm font-semibold text-green-600">
+              {hasDelivery ? delivery.receivedQty!.toLocaleString() : "—"}
+            </p>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Expected: {new Date(delivery.expectedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+        </p>
+
+        {result && (
+          <Badge variant={result.variance_applied ? "warning" : "success"} className="w-full justify-center py-1.5">
+            {result.variance_applied ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+            Received {result.quantity_received.toLocaleString()} units
+            {result.variance_applied
+              ? ` (${result.variance_pct > 0 ? "+" : ""}${result.variance_pct}% vs ordered)`
+              : " — matches order"}
+          </Badge>
+        )}
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <Button className="w-full" disabled={hasDelivery || isReceiving} onClick={handleReceive}>
+          <PackageCheck size={15} />
+          {hasDelivery ? "Delivery Recorded" : isReceiving ? "Recording..." : "Receive Goods"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function GoodsReceiptPage() {
+  const [deliveries, setDeliveries] = React.useState<Delivery[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const loadDeliveries = React.useCallback(() => getDeliveries().then(setDeliveries), []);
+
+  React.useEffect(() => {
+    loadDeliveries().finally(() => setIsLoading(false));
+  }, [loadDeliveries]);
+
   return (
     <div className="animate-fade-in">
       <PageHeader
         title="Goods Receipt"
-        description="Track inbound shipments and reconcile received quantities against purchase orders"
+        description="Track inbound purchase orders and record deliveries against them"
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {shipments.map((s) => {
-          const pct = Math.round((s.receivedQty / s.orderedQty) * 100);
-          const pending = s.orderedQty - s.receivedQty;
-          return (
-            <Card key={s.id}>
-              <CardHeader className="flex-row items-start justify-between space-y-0">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-500/10">
-                    <Truck size={17} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{s.id}</p>
-                    <p className="text-xs text-muted-foreground">Linked to {s.poId}</p>
-                  </div>
-                </div>
-                <StatusBadge status={s.status} />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-foreground">{s.supplier}</p>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Warehouse size={13} /> {s.warehouse}
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Received progress</span>
-                    <span className="font-medium text-foreground">{pct}%</span>
-                  </div>
-                  <Progress value={pct} className="mt-1.5" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-secondary p-3">
-                    <p className="text-[11px] text-muted-foreground">Received qty</p>
-                    <p className="mt-1 text-sm font-semibold text-green-600">{s.receivedQty.toLocaleString()}</p>
-                  </div>
-                  <div className="rounded-lg bg-secondary p-3">
-                    <p className="text-[11px] text-muted-foreground">Pending qty</p>
-                    <p className="mt-1 text-sm font-semibold text-amber-600">{pending.toLocaleString()}</p>
-                  </div>
-                </div>
-
-                <p className="text-xs text-muted-foreground">Expected: {s.expectedDate}</p>
-
-                <Button className="w-full" disabled={s.status === "Fully Received"}>
-                  <PackageCheck size={15} />
-                  {s.status === "Fully Received" ? "Fully Received" : "Receive Goods"}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+        {deliveries.map((d) => (
+          <DeliveryCard key={d.id} delivery={d} onReceived={loadDeliveries} />
+        ))}
       </div>
+      {deliveries.length === 0 && (
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          {isLoading ? "Loading purchase orders..." : "No purchase orders yet."}
+        </p>
+      )}
     </div>
   );
 }

@@ -68,24 +68,24 @@ export interface PurchaseOrder {
 // live via getPurchaseOrders() in lib/api.ts — see
 // app/purchase-orders/page.tsx.
 
-export interface Shipment {
+export type DeliveryStatus = "Awaiting Receipt" | "Partially Received" | "Fully Received";
+
+export interface Delivery {
   id: string;
-  poId: string;
+  item: string;
   supplier: string;
-  warehouse: string;
+  destinationDC: string;
   orderedQty: number;
-  receivedQty: number;
-  status: "Awaiting Receipt" | "Partially Received" | "Fully Received" | "Delayed";
+  receivedQty: number | null;
+  status: DeliveryStatus;
   expectedDate: string;
+  variancePct: number | null;
 }
 
-export const shipments: Shipment[] = [
-  { id: "SHP-4471", poId: "PO-88231", supplier: "MedSource Pharmaceuticals", warehouse: "Delhi Central WH", orderedQty: 1200, receivedQty: 0, status: "Awaiting Receipt", expectedDate: "2026-08-16" },
-  { id: "SHP-4470", poId: "PO-88229", supplier: "MedSource Pharmaceuticals", warehouse: "Chennai Cold Chain WH", orderedQty: 600, receivedQty: 420, status: "Partially Received", expectedDate: "2026-08-14" },
-  { id: "SHP-4469", poId: "PO-88228", supplier: "Global PackTech Ltd.", warehouse: "Bengaluru Hub", orderedQty: 3000, receivedQty: 3000, status: "Fully Received", expectedDate: "2026-08-13" },
-  { id: "SHP-4468", poId: "PO-88227", supplier: "Apex Industrial Supplies", warehouse: "Delhi Central WH", orderedQty: 220, receivedQty: 220, status: "Fully Received", expectedDate: "2026-08-12" },
-  { id: "SHP-4467", poId: "PO-88230", supplier: "Sunrise Electronics Co.", warehouse: "Pune Fulfilment Center", orderedQty: 40, receivedQty: 0, status: "Delayed", expectedDate: "2026-08-13" },
-];
+// `shipments` used to be a static mock array here (an entity with no real
+// counterpart). It's now fetched live via getDeliveries() in lib/api.ts,
+// built directly from real purchase_orders + goods_receipts — see
+// app/goods-receipt/page.tsx.
 
 export interface InvoiceRecord {
   id: string;
