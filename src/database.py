@@ -174,12 +174,17 @@ def insert_goods_receipt(gr: dict) -> str:
 
 def record_delivery(po_id: str, additional_qty: float | None = None) -> dict:
     """Adds additional_qty to the PO's single goods_receipts row (creating it
-    on first delivery), capped at the PO's quantity_ordered so a delivery can
-    never push received quantity past what was actually ordered. Status is
-    derived and stored here -- authoritative, not inferred client-side.
-    additional_qty=None delivers everything still outstanding (a one-click
-    full delivery). Returns the row plus quantity_ordered/variance_applied/
-    variance_pct so callers can build a GoodsReceiptResponse directly."""
+    on first delivery). Status is derived and stored here -- authoritative,
+    not inferred client-side. additional_qty=None delivers everything still
+    outstanding (a one-click full delivery) -- that formula can never itself
+    exceed quantity_ordered, so over-delivery only ever comes from an
+    explicit typed quantity, never a blank "receive the rest" click.
+
+    An explicit quantity that pushes the total past quantity_ordered is
+    recorded as-is (no cap) and lands status "Over-Delivered" instead of
+    "Fully Received", so a real over-shipment is never silently hidden.
+    Returns the row plus quantity_ordered/variance_applied/variance_pct so
+    callers can build a GoodsReceiptResponse directly."""
     po = get_purchase_order(po_id)
     if po is None:
         raise ValueError(f"purchase order '{po_id}' not found")
@@ -193,8 +198,13 @@ def record_delivery(po_id: str, additional_qty: float | None = None) -> dict:
     current_received = existing["quantity_received"] if existing else 0
     if additional_qty is None:
         additional_qty = max(ordered - current_received, 0)
-    new_received = min(current_received + additional_qty, ordered)
-    status = "Pending" if new_received <= 0 else ("Fully Received" if new_received >= ordered else "Partially Received")
+    new_received = current_received + additional_qty
+    status = (
+        "Pending" if new_received <= 0
+        else "Over-Delivered" if new_received > ordered
+        else "Fully Received" if new_received >= ordered
+        else "Partially Received"
+    )
 
     if existing:
         cur.execute(
@@ -214,7 +224,7 @@ def record_delivery(po_id: str, additional_qty: float | None = None) -> dict:
     conn.close()
 
     row["quantity_ordered"] = ordered
-    row["variance_applied"] = new_received < ordered
+    row["variance_applied"] = new_received != ordered
     row["variance_pct"] = round((new_received - ordered) / ordered * 100, 2) if ordered else 0.0
     return row
 

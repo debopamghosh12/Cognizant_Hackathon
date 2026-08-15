@@ -114,12 +114,15 @@ export default function InvoicesPage() {
   }, [loadAll]);
 
   // A PO is eligible for invoice generation once it has received something
-  // (Partially or Fully Received) and doesn't already have an invoice --
-  // /purchase-orders/{po_id}/generate-invoice also enforces the latter
-  // server-side (409 if one already exists).
+  // (Partially/Fully Received, or Over-Delivered -- still a real receipt,
+  // just one 3-way matching should flag) and doesn't already have an
+  // invoice -- /purchase-orders/{po_id}/generate-invoice also enforces the
+  // latter server-side (409 if one already exists).
   const invoicedPoIds = new Set(invoices.map((i) => i.poId));
   const eligiblePOs = deliveries.filter(
-    (d) => (d.status === "Partially Received" || d.status === "Fully Received") && !invoicedPoIds.has(d.id)
+    (d) =>
+      (d.status === "Partially Received" || d.status === "Fully Received" || d.status === "Over-Delivered") &&
+      !invoicedPoIds.has(d.id)
   );
 
   const filteredInvoices = invoices.filter((inv) => {

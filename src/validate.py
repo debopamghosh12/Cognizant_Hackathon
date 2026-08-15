@@ -27,6 +27,11 @@ def three_way_match(extracted_data, po_record, gr_record):
     if not within_tolerance(expected_total, extracted_data["total_amount"]):
         issues.append("Invoice total amount does not reconcile with price x quantity received.")
 
+    # Strict excess check, not within_tolerance() -- a normal in-progress
+    # partial delivery (received < ordered) must never trip this.
+    if gr_record["quantity_received"] > po_record["quantity_ordered"]:
+        issues.append("Goods receipt quantity received exceeds PO quantity ordered (over-delivery).")
+
     if issues:
         return "Flagged_For_Review", issues
     return "Approved", []

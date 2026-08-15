@@ -231,4 +231,17 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
             "match": within_tolerance(expected_total, inv_total),
         })
 
+    # Mirrors three_way_match()'s 4th check (src/validate.py) -- a strict
+    # excess comparison, not within_tolerance(), so it never flags a normal
+    # in-progress partial delivery.
+    po_qty_ordered = po["quantity_ordered"]
+    gr_qty_received = gr["quantity_received"]
+    rows.append({
+        "label": "Goods Receipt vs PO Quantity",
+        "po": f"{po_qty_ordered:g} units",
+        "gr": f"{gr_qty_received:g} units",
+        "invoice": "—",
+        "match": gr_qty_received <= po_qty_ordered,
+    })
+
     return rows

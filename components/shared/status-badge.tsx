@@ -14,6 +14,7 @@ const statusMap: Record<string, { variant: "success" | "warning" | "destructive"
   "Cancelled": { variant: "destructive" },
   "Awaiting Receipt": { variant: "neutral" },
   "Fully Received": { variant: "success" },
+  "Over-Delivered": { variant: "destructive" },
   "Delayed": { variant: "destructive" },
   "Awaiting Delivery": { variant: "info" },
   "Needs Review": { variant: "warning" },

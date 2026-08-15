@@ -20,6 +20,8 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
 
   const hasDelivery = delivery.receivedQty !== null;
   const isFullyReceived = delivery.status === "Fully Received";
+  const isOverDelivered = delivery.status === "Over-Delivered";
+  const isComplete = isFullyReceived || isOverDelivered;
   const pct = hasDelivery ? Math.round(((delivery.receivedQty ?? 0) / delivery.orderedQty) * 100) : 0;
 
   const handleReceive = async () => {
@@ -105,13 +107,23 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
 
+        {isOverDelivered && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-900 dark:bg-red-950/30">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <p>
+              Over-delivery: received {(delivery.receivedQty ?? 0).toLocaleString()} units against a{" "}
+              {delivery.orderedQty.toLocaleString()}-unit order — flagged for review.
+            </p>
+          </div>
+        )}
+
         {isScanning && (
           <p className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary-600">
             <ScanLine size={13} className="animate-pulse" /> Scanning incoming shipment...
           </p>
         )}
 
-        {!isFullyReceived && (
+        {!isComplete && (
           <div className="space-y-1">
             <p className="text-[11px] font-medium text-muted-foreground">Confirm sensor-detected quantity</p>
             <Input
@@ -126,9 +138,9 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
           </div>
         )}
 
-        <Button className="w-full" disabled={isFullyReceived || isReceiving || isScanning} onClick={handleReceive}>
+        <Button className="w-full" disabled={isComplete || isReceiving || isScanning} onClick={handleReceive}>
           <PackageCheck size={15} />
-          {isFullyReceived ? "Fully Received" : isScanning ? "Scanning..." : isReceiving ? "Recording..." : "Record Delivery"}
+          {isOverDelivered ? "Over-Delivered" : isFullyReceived ? "Fully Received" : isScanning ? "Scanning..." : isReceiving ? "Recording..." : "Record Delivery"}
         </Button>
       </CardContent>
     </Card>

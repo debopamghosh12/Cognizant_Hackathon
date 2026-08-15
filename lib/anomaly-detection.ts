@@ -33,11 +33,13 @@ export interface ReliabilityTrend {
 //
 // "Partially Received" is used as the observable proxy for "late/partial"
 // -- goods_receipts has no actual-vs-expected delivery timestamp to compute
-// genuine lateness from, so "still not fully received" is the honest stand-in.
+// genuine lateness from, so "still not fully received" is the honest
+// stand-in. "Over-Delivered" counts too -- shipping the wrong quantity in
+// either direction is the same fulfillment-accuracy failure.
 export function getReliabilityTrend(recentStatuses: string[]): ReliabilityTrend | null {
   if (recentStatuses.length < 2) return null;
 
-  const problematic = recentStatuses.filter((s) => s === "Partially Received").length;
+  const problematic = recentStatuses.filter((s) => s === "Partially Received" || s === "Over-Delivered").length;
   if (problematic / recentStatuses.length < 0.5) return null;
 
   return {

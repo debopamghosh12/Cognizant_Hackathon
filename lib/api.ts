@@ -336,6 +336,7 @@ const GR_STATUS_MAP: Record<string, DeliveryStatus> = {
   Pending: "Awaiting Receipt",
   "Partially Received": "Partially Received",
   "Fully Received": "Fully Received",
+  "Over-Delivered": "Over-Delivered",
 };
 
 function transformDelivery(raw: RawPurchaseOrder): Delivery {

@@ -86,7 +86,7 @@ export interface PurchaseOrder {
 // live via getPurchaseOrders() in lib/api.ts — see
 // app/purchase-orders/page.tsx.
 
-export type DeliveryStatus = "Awaiting Receipt" | "Partially Received" | "Fully Received";
+export type DeliveryStatus = "Awaiting Receipt" | "Partially Received" | "Fully Received" | "Over-Delivered";
 
 export interface Delivery {
   id: string;
