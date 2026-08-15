@@ -1,6 +1,8 @@
 "use client";
+import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { getAutomationRate } from "@/lib/api";
 import {
   LayoutDashboard,
   Sparkles,
@@ -34,6 +36,14 @@ const navItems = [
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  // Same shared getAutomationRate() the Dashboard's Touchless Automation
+  // card and Analytics' Automation Rate card use -- one calculation, so
+  // this can't drift from either of those again the way it did before.
+  const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    getAutomationRate().then(setAutomationRate);
+  }, []);
 
   return (
     <div className="flex h-full w-64 flex-col border-r border-border bg-card">
@@ -93,7 +103,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="border-t border-border p-3">
         <div className="rounded-lg bg-gradient-to-br from-primary-600 to-primary-800 p-3 text-white">
           <p className="text-xs font-semibold">Touchless Automation</p>
-          <p className="mt-0.5 text-[11px] text-primary-100">78% of P2P cycle is autonomous</p>
+          <p className="mt-0.5 text-[11px] text-primary-100">
+            {automationRate === undefined ? "…" : automationRate === null ? "—"
+              : `${automationRate}%`} of P2P cycle is autonomous
+          </p>
         </div>
       </div>
     </div>
