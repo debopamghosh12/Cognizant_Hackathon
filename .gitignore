@@ -1,10 +1,4 @@
-**/__pycache__/
-*.pyc
-*.db
-venv/
-.env
-chatbot/generated_pos/
-output/printable_invoices/*.pdf
-*.txt
-!requirements.txt
-!README.md
+node_modules
+.next
+out
+.env*
