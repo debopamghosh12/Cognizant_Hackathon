@@ -29,6 +29,7 @@ const REQUESTER_LABEL: Record<string, string> = {
 function transformRequisition(raw: RawRequisition): Requisition {
   return {
     id: `REQ-${raw.id}`,
+    requisitionId: raw.id,
     requester: REQUESTER_LABEL[raw.source] ?? raw.source,
     sku: raw.sku_id,
     itemName: raw.sku_name ?? raw.sku_id,
@@ -39,6 +40,7 @@ function transformRequisition(raw: RawRequisition): Requisition {
     status: REQUISITION_STATUS_MAP[raw.status] ?? "PENDING",
     createdDate: raw.created_at,
     estimatedCost: 0,
+    source: raw.source,
   };
 }
 
@@ -62,10 +64,16 @@ interface RawSupplier {
   supplier_name: string;
   country: string;
   category: string;
+  sku_id: string;
   unit_price: string;
+  minimum_order_quantity: string;
   lead_time_days: string;
   on_time_delivery_pct: string;
   quality_score: string;
+  defect_rate_pct: string;
+  max_capacity_units_per_month: string;
+  current_utilization_pct: string;
+  gmp_certified: string; // "True" | "False"
   risk_tier: "LOW" | "MEDIUM" | "HIGH";
   is_preferred: string; // "True" | "False"
   contracts: number;
@@ -95,6 +103,12 @@ function transformSupplier(raw: RawSupplier): Supplier {
     onTimeDelivery: Math.round(parseFloat(raw.on_time_delivery_pct) * 100),
     location: raw.country,
     contracts: raw.contracts,
+    skuId: raw.sku_id,
+    minimumOrderQuantity: parseInt(raw.minimum_order_quantity, 10),
+    maxCapacityUnitsPerMonth: parseInt(raw.max_capacity_units_per_month, 10),
+    currentUtilizationPct: parseFloat(raw.current_utilization_pct),
+    gmpCertified: raw.gmp_certified === "True",
+    defectRatePct: parseFloat(raw.defect_rate_pct),
   };
 }
 
@@ -105,6 +119,60 @@ export async function getSuppliers(): Promise<Supplier[]> {
   }
   const raw: RawSupplier[] = await res.json();
   return raw.map(transformSupplier);
+}
+
+export interface GeneratePOResult {
+  po_id: string;
+  item_name: string;
+  quantity_ordered: number;
+  price_per_unit: number;
+  total_budget: number;
+  status: string;
+  supplier_id: string;
+  sku_id: string;
+  requisition_id: number | null;
+  lead_time_days: number;
+  destination_dc: string;
+  created_at: string;
+}
+
+// po_generation's hard-filter rejections (422) come back as {"detail": "..."}
+// with the specific reason (e.g. "quantity 500 is below supplier minimum
+// order quantity 750") -- surfaced as the thrown Error's message so the UI
+// can show the real reason, not a generic "failed" string.
+export async function generatePO(requisition: Requisition, supplier: Supplier): Promise<GeneratePOResult> {
+  const res = await fetch("/api/generate-po", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requisition: {
+        requisition_id: requisition.requisitionId,
+        sku_id: requisition.sku,
+        quantity: requisition.quantity,
+        destination_dc: requisition.destinationDC,
+        urgency: requisition.priority,
+        source: requisition.source,
+      },
+      supplier: {
+        supplier_id: supplier.id,
+        sku_id: supplier.skuId,
+        unit_price: supplier.unitCost,
+        minimum_order_quantity: supplier.minimumOrderQuantity,
+        lead_time_days: supplier.leadTimeDays,
+        max_capacity_units_per_month: supplier.maxCapacityUnitsPerMonth,
+        current_utilization_pct: supplier.currentUtilizationPct,
+        gmp_certified: supplier.gmpCertified,
+        defect_rate_pct: supplier.defectRatePct,
+        category: supplier.category,
+      },
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Failed to generate PO: ${res.status}`);
+  }
+  return data;
 }
 
 interface RawGoodsReceipt {

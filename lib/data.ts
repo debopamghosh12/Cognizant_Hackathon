@@ -20,6 +20,7 @@ export interface MatchRow {
 
 export interface Requisition {
   id: string;
+  requisitionId: number;
   requester: string;
   sku: string;
   itemName: string;
@@ -30,6 +31,7 @@ export interface Requisition {
   status: RequisitionStatus;
   createdDate: string;
   estimatedCost: number;
+  source: "AUTO_P1" | "MANUAL_CHATBOT";
 }
 
 // `requisitions` used to be a static mock array here. It's now fetched live
@@ -46,6 +48,14 @@ export interface Supplier {
   onTimeDelivery: number;
   location: string;
   contracts: number;
+  // Raw fields needed to call POST /generate-po for this supplier's one
+  // displayed SKU (see app/suppliers/page.tsx) -- not shown in the card UI.
+  skuId: string;
+  minimumOrderQuantity: number;
+  maxCapacityUnitsPerMonth: number;
+  currentUtilizationPct: number;
+  gmpCertified: boolean;
+  defectRatePct: number;
 }
 
 // `suppliers` used to be a static mock array here. It's now fetched live
