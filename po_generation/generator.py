@@ -1,6 +1,14 @@
+import os
 import random
+import sys
 import uuid
 from datetime import datetime, timezone
+
+SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from validate import within_tolerance  # src/validate.py — reused so this stays consistent with three_way_match()
 
 GMP_REQUIRED_CATEGORIES = {"Active Ingredient", "Excipient"}
 MAX_DEFECT_RATE_PCT = 0.05
@@ -106,3 +114,51 @@ def simulate_delivery(po_id: str, quantity_ordered: float) -> dict:
         "variance_applied": variance_applied,
         "variance_pct": round(sign * pct * 100, 2),
     }
+
+
+def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
+    """
+    Recomputes the same 3 checks three_way_match() (src/validate.py)
+    performs, via the same within_tolerance(), so this page can never
+    silently drift from what actually decided the invoice's match_status.
+    A row is included only when both sides of the comparison are
+    available -- an Incomplete/Failed extraction has no invoice
+    quantities, and a missing GR means there's nothing to compare
+    quantity_received against.
+    """
+    rows = []
+
+    if invoice.get("quantity_ordered") is not None:
+        po_qty = po["quantity_ordered"]
+        inv_qty = invoice["quantity_ordered"]
+        rows.append({
+            "label": "Quantity Ordered",
+            "po": f"{po_qty:g} units",
+            "gr": "—",
+            "invoice": f"{inv_qty:g} units",
+            "match": within_tolerance(po_qty, inv_qty),
+        })
+
+    if gr is not None and invoice.get("quantity_received") is not None:
+        gr_qty = gr["quantity_received"]
+        inv_qty = invoice["quantity_received"]
+        rows.append({
+            "label": "Quantity Received",
+            "po": "—",
+            "gr": f"{gr_qty:g} units",
+            "invoice": f"{inv_qty:g} units",
+            "match": within_tolerance(gr_qty, inv_qty),
+        })
+
+    if invoice.get("quantity_received") is not None and invoice.get("total_amount") is not None:
+        expected_total = po["price_per_unit"] * invoice["quantity_received"]
+        inv_total = invoice["total_amount"]
+        rows.append({
+            "label": "Total Amount Reconciliation",
+            "po": f"${expected_total:.2f}",
+            "gr": "—",
+            "invoice": f"${inv_total:.2f}",
+            "match": within_tolerance(expected_total, inv_total),
+        })
+
+    return rows

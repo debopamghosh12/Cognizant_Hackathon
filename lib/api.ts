@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow } from "@/lib/data";
 
 interface RawRequisition {
   id: number;
@@ -158,4 +158,25 @@ export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
   }
   const raw: RawPurchaseOrder[] = await res.json();
   return raw.map(transformPurchaseOrder);
+}
+
+// The 3-way match comparison itself is computed server-side (po_generation's
+// build_match_rows(), reusing src/validate.py's within_tolerance() directly)
+// so this stays a thin pass-through rather than a second, potentially
+// drifting reimplementation of the match logic in TypeScript.
+export interface InvoiceMatch {
+  invoice_id: string;
+  po_id: string;
+  gr_id: string | null;
+  match_status: string | null;
+  extraction_status: string;
+  rows: MatchRow[];
+}
+
+export async function getInvoiceMatches(): Promise<InvoiceMatch[]> {
+  const res = await fetch("/api/matches");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch invoice matches: ${res.status}`);
+  }
+  return res.json();
 }

@@ -11,7 +11,7 @@ def get_po_and_gr(po_id):
     cur = conn.cursor()
     cur.execute("SELECT quantity_ordered, price_per_unit, total_budget FROM purchase_orders WHERE po_id=?", (po_id,))
     po_row = cur.fetchone()
-    cur.execute("SELECT quantity_received FROM goods_receipts WHERE po_id=?", (po_id,))
+    cur.execute("SELECT gr_id, quantity_received FROM goods_receipts WHERE po_id=?", (po_id,))
     gr_row = cur.fetchone()
     conn.close()
 
@@ -19,17 +19,17 @@ def get_po_and_gr(po_id):
     # No GRN module exists yet to write goods_receipts for a real PO, so this
     # is an expected, routine state -- not an error. Caller checks for None
     # and skips the 3-way match rather than treating it as a data problem.
-    gr_record = {"quantity_received": gr_row[0]} if gr_row else None
+    gr_record = {"gr_id": gr_row[0], "quantity_received": gr_row[1]} if gr_row else None
     return po_record, gr_record
 
-def save_invoice_record(invoice_id, po_id, extracted_data, extraction_status, match_status, printable_path):
+def save_invoice_record(invoice_id, po_id, gr_id, extracted_data, extraction_status, match_status, printable_path):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO invoices (invoice_id, po_id, item_name, quantity_ordered, quantity_received,
+        INSERT INTO invoices (invoice_id, po_id, gr_id, item_name, quantity_ordered, quantity_received,
                                price_per_unit, total_amount, extraction_status, match_status, printable_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (invoice_id, po_id, extracted_data.get("item_name"), extracted_data.get("quantity_ordered"),
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (invoice_id, po_id, gr_id, extracted_data.get("item_name"), extracted_data.get("quantity_ordered"),
           extracted_data.get("quantity_received"), extracted_data.get("price_per_unit"),
           extracted_data.get("total_amount"), extraction_status, match_status, printable_path))
     conn.commit()
@@ -42,30 +42,30 @@ def process_invoice(image_path, po_id):
     extracted_data = extract_invoice_data(image_path)
     if extracted_data is None:
         print("Extraction failed completely — flagging for manual review.")
-        save_invoice_record(invoice_id, po_id, {}, "Failed", "Flagged_For_Review", None)
+        save_invoice_record(invoice_id, po_id, None, {}, "Failed", "Flagged_For_Review", None)
         return
 
     if has_missing_fields(extracted_data):
         print("Missing/illegible fields detected — flagging for manual review.")
-        save_invoice_record(invoice_id, po_id, extracted_data, "Incomplete", "Flagged_For_Review", None)
+        save_invoice_record(invoice_id, po_id, None, extracted_data, "Incomplete", "Flagged_For_Review", None)
         return
 
     po_record, gr_record = get_po_and_gr(po_id)
     if gr_record is None:
         print(f"No GRN found for {po_id} — skipping 3-way match until goods receipt is recorded.")
-        save_invoice_record(invoice_id, po_id, extracted_data, "Extracted", "Awaiting_Goods_Receipt", None)
+        save_invoice_record(invoice_id, po_id, None, extracted_data, "Extracted", "Awaiting_Goods_Receipt", None)
         return
 
     match_status, issues = three_way_match(extracted_data, po_record, gr_record)
 
     if match_status == "Flagged_For_Review":
         print(f"3-way match failed: {issues}")
-        save_invoice_record(invoice_id, po_id, extracted_data, "Extracted", match_status, None)
+        save_invoice_record(invoice_id, po_id, gr_record["gr_id"], extracted_data, "Extracted", match_status, None)
         return
 
     printable_path = generate_printable_invoice(invoice_id, extracted_data)
     print(f"Match approved. Printable invoice generated at {printable_path}")
-    save_invoice_record(invoice_id, po_id, extracted_data, "Extracted", match_status, printable_path)
+    save_invoice_record(invoice_id, po_id, gr_record["gr_id"], extracted_data, "Extracted", match_status, printable_path)
 
 if __name__ == "__main__":
     init_db()

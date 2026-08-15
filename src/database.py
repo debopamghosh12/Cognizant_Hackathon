@@ -108,6 +108,33 @@ def get_purchase_order(po_id: str) -> dict | None:
     conn.close()
     return dict(row) if row else None
 
+def get_goods_receipt(gr_id: str) -> dict | None:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM goods_receipts WHERE gr_id=?", (gr_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_goods_receipt_by_po(po_id: str) -> dict | None:
+    """Fallback for invoice rows saved before gr_id was populated."""
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM goods_receipts WHERE po_id=?", (po_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def list_invoices() -> list[dict]:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    # invoices has no timestamp column -- rowid (insertion order) is the
+    # available proxy for "most recent".
+    rows = cur.execute("SELECT * FROM invoices ORDER BY rowid DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def insert_goods_receipt(gr: dict) -> str:
     conn = get_connection()
     cur = conn.cursor()

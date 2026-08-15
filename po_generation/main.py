@@ -8,7 +8,7 @@ if SRC_DIR not in sys.path:
 import database  # src/database.py — purchase_orders table lives here
 from fastapi import FastAPI, HTTPException
 
-from .generator import generate_po, simulate_delivery
+from .generator import generate_po, simulate_delivery, build_match_rows
 from .schemas import GeneratePORequest, POResponse, GoodsReceiptResponse
 
 app = FastAPI(title="PO Generation")
@@ -44,3 +44,28 @@ def simulate_delivery_endpoint(po_id: str):
     gr = simulate_delivery(po_id, po["quantity_ordered"])
     database.insert_goods_receipt(gr)
     return gr
+
+
+@app.get("/matches")
+def list_matches_endpoint():
+    results = []
+    for invoice in database.list_invoices():
+        po = database.get_purchase_order(invoice["po_id"])
+        if po is None:
+            continue  # shouldn't happen (po_id is a real FK), but don't 500 on stale data
+
+        gr = None
+        if invoice.get("gr_id"):
+            gr = database.get_goods_receipt(invoice["gr_id"])
+        if gr is None:
+            gr = database.get_goods_receipt_by_po(invoice["po_id"])  # fallback for pre-fix rows
+
+        results.append({
+            "invoice_id": invoice["invoice_id"],
+            "po_id": invoice["po_id"],
+            "gr_id": gr["gr_id"] if gr else None,
+            "match_status": invoice["match_status"],
+            "extraction_status": invoice["extraction_status"],
+            "rows": build_match_rows(invoice, po, gr),
+        })
+    return results

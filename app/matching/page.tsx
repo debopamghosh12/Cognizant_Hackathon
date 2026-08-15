@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,26 +7,33 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { getInvoiceMatches, type InvoiceMatch } from "@/lib/api";
 
-interface MatchRow {
-  label: string;
-  po: string;
-  gr: string;
-  invoice: string;
-  match: boolean;
-}
-
-const rows: MatchRow[] = [
-  { label: "Order Quantity", po: "1,200 units", gr: "1,200 units", invoice: "1,200 units", match: true },
-  { label: "Unit Price", po: "₹6.80", gr: "—", invoice: "₹6.80", match: true },
-  { label: "Total Amount", po: "₹8,160.00", gr: "—", invoice: "₹8,160.00", match: true },
-  { label: "Supplier", po: "MedSource Pharmaceuticals", gr: "MedSource Pharmaceuticals", invoice: "MedSource Pharmaceuticals", match: true },
-  { label: "Tax Amount", po: "₹408.00", gr: "—", invoice: "₹430.00", match: false },
-  { label: "Delivery Date", po: "2026-08-16", gr: "2026-08-14", invoice: "2026-08-14", match: false },
-];
+const EXTRACTION_STATUS_LABEL: Record<string, string> = {
+  Failed: "OCR extraction failed completely for this invoice.",
+  Incomplete: "OCR extraction found this invoice's fields illegible or missing.",
+};
 
 export default function MatchingPage() {
-  const matchScore = Math.round((rows.filter((r) => r.match).length / rows.length) * 100);
+  const [matches, setMatches] = React.useState<InvoiceMatch[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    getInvoiceMatches()
+      .then(setMatches)
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const selected = matches[0] ?? null;
+  const rows = selected?.rows ?? [];
+  const matchScore = rows.length > 0 ? Math.round((rows.filter((r) => r.match).length / rows.length) * 100) : 0;
+
+  const emptyReason = selected
+    ? EXTRACTION_STATUS_LABEL[selected.extraction_status] ??
+      (selected.match_status === "Awaiting_Goods_Receipt"
+        ? "No goods receipt recorded for this PO yet — nothing to compare quantity received against."
+        : null)
+    : null;
 
   return (
     <div className="animate-fade-in">
@@ -48,23 +56,40 @@ export default function MatchingPage() {
         <CardContent className="flex flex-col items-center gap-4 p-5 sm:flex-row sm:justify-between">
           <div>
             <p className="text-xs font-medium text-muted-foreground">Comparing</p>
-            <p className="text-sm font-semibold text-foreground">PO-88231 · SHP-4471 · INV-204</p>
+            <p className="text-sm font-semibold text-foreground">
+              {isLoading
+                ? "Loading..."
+                : selected
+                ? `${selected.po_id} · ${selected.gr_id ?? "—"} · ${selected.invoice_id}`
+                : "No invoices processed yet"}
+            </p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="w-48">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Match Score</span>
-                <span className="font-bold text-foreground">{matchScore}%</span>
+          {rows.length > 0 && (
+            <div className="flex items-center gap-4">
+              <div className="w-48">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Match Score</span>
+                  <span className="font-bold text-foreground">{matchScore}%</span>
+                </div>
+                <Progress value={matchScore} className="mt-1.5" indicatorClassName={matchScore >= 90 ? "bg-green-600" : "bg-amber-500"} />
               </div>
-              <Progress value={matchScore} className="mt-1.5" indicatorClassName={matchScore >= 90 ? "bg-green-600" : "bg-amber-500"} />
+              <Badge variant={matchScore >= 90 ? "success" : "warning"} className="text-sm">
+                {matchScore >= 90 ? "Auto-Approvable" : "Needs Review"}
+              </Badge>
             </div>
-            <Badge variant={matchScore >= 90 ? "success" : "warning"} className="text-sm">
-              {matchScore >= 90 ? "Auto-Approvable" : "Needs Review"}
-            </Badge>
-          </div>
+          )}
         </CardContent>
       </Card>
 
+      {rows.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            {isLoading
+              ? "Loading matches..."
+              : emptyReason ?? "No comparable invoice data yet."}
+          </CardContent>
+        </Card>
+      ) : (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
@@ -72,7 +97,7 @@ export default function MatchingPage() {
               <ShoppingCart size={16} className="text-primary-600" />
               <CardTitle>Purchase Order</CardTitle>
             </div>
-            <CardDescription>PO-88231</CardDescription>
+            <CardDescription>{selected?.po_id}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {rows.map((r) => (
@@ -90,7 +115,7 @@ export default function MatchingPage() {
               <PackageCheck size={16} className="text-primary-600" />
               <CardTitle>Goods Receipt</CardTitle>
             </div>
-            <CardDescription>SHP-4471</CardDescription>
+            <CardDescription>{selected?.gr_id ?? "—"}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {rows.map((r) => (
@@ -108,7 +133,7 @@ export default function MatchingPage() {
               <Receipt size={16} className="text-primary-600" />
               <CardTitle>Invoice</CardTitle>
             </div>
-            <CardDescription>INV-204</CardDescription>
+            <CardDescription>{selected?.invoice_id}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {rows.map((r) => (
@@ -137,6 +162,7 @@ export default function MatchingPage() {
           </CardContent>
         </Card>
       </div>
+      )}
     </div>
   );
 }

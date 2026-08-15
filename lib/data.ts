@@ -10,6 +10,14 @@ export type RequisitionStatus =
   | "CONVERTED_TO_PO";
 export type POStatus = "Draft" | "Sent" | "Acknowledged" | "Partially Received" | "Completed" | "Cancelled";
 
+export interface MatchRow {
+  label: string;
+  po: string;
+  gr: string;
+  invoice: string;
+  match: boolean;
+}
+
 export interface Requisition {
   id: string;
   requester: string;
