@@ -40,6 +40,8 @@ export default function PurchaseOrdersPage() {
   const [selected, setSelected] = React.useState<PurchaseOrder | null>(null);
   const [isSending, setIsSending] = React.useState(false);
   const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null | undefined>(undefined);
+  const [isDownloadingPDF, setIsDownloadingPDF] = React.useState(false);
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
   // requisitionId -> real item name (e.g. "Amoxicillin 250mg"), sourced
   // from chatbot's sku catalog via getRequisitions(). PurchaseOrder.items
   // only ever holds the sku_id (po_generation echoes requisition.sku_id
@@ -72,28 +74,34 @@ export default function PurchaseOrdersPage() {
     getSupplierForPO(selected).then(setSelectedSupplier);
   }, [selected]);
 
-  // Same client-side Blob + anchor pattern already used for CSV export on
-  // the Requisitions page -- no backend PDF pipeline exists for POs (only
-  // invoices have one, via the legacy OCR script's ReportLab generator,
-  // and even that's dormant for synthetic invoices). This builds a clean,
-  // print-ready HTML document from the PO data already on this page and
-  // downloads it directly; the browser's own Print -> Save as PDF turns it
-  // into an actual PDF if that's specifically what's needed.
+  // No backend PDF pipeline exists for POs (only invoices have one, via the
+  // legacy OCR script's ReportLab generator, and even that's dormant for
+  // synthetic invoices). Client-side conversion instead, via html2pdf.js
+  // (jsPDF + html2canvas under the hood): this builds the same HTML/CSS
+  // template as before, renders it into an off-screen container, then
+  // rasterizes+paginates it into a real .pdf Blob -- dynamically imported
+  // (only fetched when this button is actually clicked) so it doesn't add
+  // to this page's initial JS bundle.
   // FIELD PROVENANCE (so this is easy to answer for if asked):
   // REAL data: PO #, PO Date, Expected Delivery Date, Status, Supplier
-  // Name/ID/Category, Reliability Score, On-time Delivery %, Payment Date
-  // (uses the supplier's actual negotiated payment_terms_days from
-  // data/suppliers.csv), Destination DC, Requisition ID, Item Description
-  // (via getItemDescription()'s requisition lookup), Quantity, Unit
-  // Price, Amount/Total.
+  // Name/ID/Category, Payment Date (uses the supplier's actual negotiated
+  // payment_terms_days from data/suppliers.csv), Destination DC,
+  // Requisition ID, Item Description (via getItemDescription()'s
+  // requisition lookup), Quantity, Unit Price, Amount/Total. Reliability
+  // Score and On-time Delivery % are also real (Supplier.reliabilityScore/
+  // onTimeDelivery) but shown only in the Predictive Delivery Risk
+  // callout now, not duplicated in the Supplier Information block.
   // PLACEHOLDERS/DEFAULTS (no such field exists in our data model --
   // noted here and repeated inline below):
   //   - Company address ("Autonomous Procurement Division") -- suppliers
   //     and our own org have no address field anywhere.
-  //   - Supplier GSTIN/contact/email -- not in data/suppliers.csv at all
-  //     (only id, name, category, commercial/quality/logistics metrics).
-  //   - "Bill To" reusing our own org name -- POs don't track a separate
-  //     billing address distinct from the requisition's destination DC.
+  //   - Supplier Address/Email/GSTIN in the Supplier Information block --
+  //     not in data/suppliers.csv at all (only id, name, category,
+  //     commercial/quality/logistics metrics) -- shown as blank labels,
+  //     not fabricated placeholder text, per explicit instruction.
+  //   - "Bill To" -- our own org's billing address isn't tracked anywhere;
+  //     shows an explicit placeholder note rather than reusing the
+  //     requisition's destination DC (that's what "Ship To" is for).
   //   - Payment Terms ("100% against invoice") -- no payment-schedule
   //     field exists (payment_terms_days only gives net-days, used above).
   //   - Line item "Units" label -- no unit-of-measure field is persisted
@@ -101,11 +109,23 @@ export default function PurchaseOrdersPage() {
   //     discards it before saving the requisition).
   //   - Terms & Conditions -- generic standard procurement language, not
   //     legal-team-authored text.
-  function handleDownloadPO() {
+  async function handleDownloadPO() {
     if (!selected) return;
+    setDownloadError(null);
+    setIsDownloadingPDF(true);
 
     const itemDescription = getItemDescription(selected);
+    // Real value (selected.amount / selected.quantity, both real PO data) --
+    // not a data-wiring bug. The bug was display-only: lib/utils.ts's
+    // shared formatCurrency() hardcodes maximumFractionDigits: 0, which is
+    // fine for totals but rounds any sub-₹0.50 unit price down to "₹0".
+    // Kept scoped to just this cell -- formatCurrency() itself is used
+    // app-wide for real totals (Dashboard, Analytics, tables, etc.) where
+    // 0 decimal places is the right call, so it isn't touched here.
     const unitPrice = selected.quantity > 0 ? selected.amount / selected.quantity : 0;
+    const formattedUnitPrice = new Intl.NumberFormat("en-IN", {
+      style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(unitPrice);
     const stampColor = STAMP_COLOR[selected.status] ?? STAMP_COLOR.Draft;
     const poDate = new Date(selected.createdDate).toLocaleDateString("en-GB", {
       day: "2-digit", month: "long", year: "numeric",
@@ -124,16 +144,18 @@ export default function PurchaseOrdersPage() {
         </div>`
       : "";
 
-    const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>${selected.id}</title>
-<style>
+    const css = `
   @page { size: A4; margin: 1.5cm; }
   * { box-sizing: border-box; }
-  body {
+  /* Was a "body { ... }" rule when this template was a full standalone
+     .html download -- now injected into a plain <div> (no real <body> in
+     scope), so the base typography must live on .document itself or it
+     silently stops applying. */
+  .document {
     font-family: Georgia, 'Times New Roman', Times, serif;
-    color: #1a1a1a; margin: 0; padding: 0; font-size: 12.5px; line-height: 1.5;
+    color: #1a1a1a; margin: 0 auto; padding: 0; font-size: 12.5px; line-height: 1.5;
+    max-width: 800px;
   }
-  .document { max-width: 800px; margin: 0 auto; }
   .sans { font-family: system-ui, sans-serif; }
 
   /* Header */
@@ -238,13 +260,20 @@ export default function PurchaseOrdersPage() {
     color: #a3a3a3; text-align: center; font-style: italic;
   }
 
+  /* Unconditional (not gated behind @media print) so html2canvas's normal
+     screen-context rendering picks these up too, not just the browser's
+     own print dialog -- html2pdf.js's pagebreak "css" mode reads these. */
+  table.items, .payment-row, .signatory, .terms-block, .supplier-block {
+    page-break-inside: avoid;
+  }
+
   @media print {
     body { padding: 0; }
     .document { max-width: none; }
-    table.items, .payment-row, .signatory { page-break-inside: avoid; }
   }
-</style></head>
-<body>
+`;
+
+    const bodyHtml = `
   <div class="document sans">
     <div class="letterhead">
       <div class="brand">
@@ -271,8 +300,11 @@ export default function PurchaseOrdersPage() {
           <div class="kv"><span class="label">Supplier Name</span><span class="value">${selectedSupplier?.name ?? "—"}</span></div>
           <div class="kv"><span class="label">Supplier Code</span><span class="value">${selected.supplier}</span></div>
           <div class="kv"><span class="label">Category</span><span class="value">${selectedSupplier?.category ?? "—"}</span></div>
-          <div class="kv"><span class="label">Reliability Score</span><span class="value">${selectedSupplier ? `${selectedSupplier.reliabilityScore}/100` : "—"}</span></div>
-          <div class="kv"><span class="label">On-time Delivery</span><span class="value">${selectedSupplier ? `${selectedSupplier.onTimeDelivery}%` : "—"}</span></div>
+          <!-- Address/Email/GSTIN don't exist in our supplier data model --
+               left blank on purpose, not a fabricated placeholder. -->
+          <div class="kv"><span class="label">Address</span><span class="value"></span></div>
+          <div class="kv"><span class="label">Email</span><span class="value"></span></div>
+          <div class="kv"><span class="label">GSTIN</span><span class="value"></span></div>
         </div>
         <div class="supplier-col">
           <div class="kv"><span class="label">PO No.</span><span class="value">${selected.id}</span></div>
@@ -287,8 +319,8 @@ export default function PurchaseOrdersPage() {
         <div class="address-box-header">Bill To</div>
         <div class="address-box-body">
           Cognizant P2P — Autonomous Procurement<br>
-          ${selected.destinationDC}
-          <span class="placeholder-note">Placeholder: no separate billing address tracked</span>
+          Accounts Payable Department
+          <span class="placeholder-note">Placeholder — no billing address tracked in current data model</span>
         </div>
       </div>
       <div class="address-box">
@@ -332,7 +364,7 @@ export default function PurchaseOrdersPage() {
             <td>${itemDescription}</td>
             <td class="num">${selected.quantity.toLocaleString()}</td>
             <td class="num">units</td>
-            <td class="num">${formatCurrency(unitPrice)}</td>
+            <td class="num">${formattedUnitPrice}</td>
             <td class="num">${formatCurrency(selected.amount)}</td>
           </tr>
         </tbody>
@@ -368,17 +400,46 @@ export default function PurchaseOrdersPage() {
 
     ${selected.autoGenerated ? '<p class="watermark">Auto-generated by AI Agent — Cognizant Autonomous Procure-to-Pay System</p>' : ""}
   </div>
-</body></html>`;
+`;
 
-    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selected.id}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // Off-screen (not display:none -- that would give html2canvas a zero-
+    // size layout to capture) container at the same 800px width the
+    // template's .document max-width assumes, so layout/wrapping matches
+    // what the old .html download looked like.
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-10000px";
+    container.style.top = "0";
+    container.style.width = "800px";
+    container.innerHTML = `<style>${css}</style>${bodyHtml}`;
+    document.body.appendChild(container);
+
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      // html2pdf.js's own shipped type.d.ts (which wins over the
+      // separately-installed @types/html2pdf.js, so that package isn't
+      // used) doesn't declare `pagebreak` even though it's a real,
+      // documented runtime option -- `any` here, not on the whole call.
+      const options: any = {
+        filename: `${selected.id}.pdf`,
+        margin: 15, // mm -- matches the template's @page margin: 1.5cm
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        // "avoid-all" stops elements being sliced mid-box across a page
+        // boundary; "css" additionally honors the page-break-inside:
+        // avoid rules above. avoid[] is belt-and-suspenders via explicit
+        // selectors for the sections that must never split (line-items
+        // table, signatory block).
+        pagebreak: { mode: ["avoid-all", "css"], avoid: ["table.items", ".signatory", ".terms-block"] },
+      };
+      await html2pdf().set(options).from(container).save();
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : "Failed to generate PDF.");
+    } finally {
+      document.body.removeChild(container);
+      setIsDownloadingPDF(false);
+    }
   }
 
   async function handleSendToSupplier() {
@@ -528,9 +589,11 @@ export default function PurchaseOrdersPage() {
               )}
             </div>
 
+            {downloadError && <p className="mt-3 text-xs text-red-600">{downloadError}</p>}
+
             <div className="mt-4 flex gap-2">
-              <Button className="flex-1" variant="outline" onClick={handleDownloadPO}>
-                <Download size={15} /> Download PO
+              <Button className="flex-1" variant="outline" onClick={handleDownloadPO} disabled={isDownloadingPDF}>
+                <Download size={15} /> {isDownloadingPDF ? "Generating PDF..." : "Download PO"}
               </Button>
               <Button
                 className="flex-1"
