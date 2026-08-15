@@ -299,3 +299,38 @@ export async function getInvoices(): Promise<InvoiceRecord[]> {
   const raw: RawInvoice[] = await res.json();
   return raw.map(transformInvoice);
 }
+
+// chatbot's real /chat response, unwrapped as-is -- a one-off reply, not a
+// list to normalize, so no transform layer needed here unlike the
+// dashboard pages.
+export interface ChatRequisition {
+  id: number;
+  sku_id: string;
+  sku_name: string | null;
+  quantity: number;
+  destination_dc: string;
+  urgency: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  source: "AUTO_P1" | "MANUAL_CHATBOT";
+  status: "PENDING" | "VALIDATED" | "FLAGGED" | "REJECTED";
+  raw_input: string | null;
+  assumed_fields: string;
+  created_at: string;
+}
+
+export interface ChatResult {
+  requisition: ChatRequisition;
+  validation_errors: string[];
+  matched_product_phrase: string | null;
+}
+
+export async function sendChatMessage(text: string): Promise<ChatResult> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    throw new Error(`Chat request failed: ${res.status}`);
+  }
+  return res.json();
+}

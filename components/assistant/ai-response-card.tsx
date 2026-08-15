@@ -17,6 +17,7 @@ export interface AIResponseAction {
 export function AIResponseCard({
   title,
   badge,
+  badgeVariant = "success",
   fields,
   note,
   actions,
@@ -24,6 +25,7 @@ export function AIResponseCard({
 }: {
   title: string;
   badge?: string;
+  badgeVariant?: "success" | "warning" | "destructive" | "info" | "neutral";
   fields?: AIResponseField[];
   note?: string;
   actions?: AIResponseAction[];
@@ -34,7 +36,7 @@ export function AIResponseCard({
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <p className="text-sm font-semibold text-foreground">{title}</p>
         {badge && (
-          <Badge variant="success" className="text-[10px]">
+          <Badge variant={badgeVariant} className="text-[10px]">
             {badge}
           </Badge>
         )}
