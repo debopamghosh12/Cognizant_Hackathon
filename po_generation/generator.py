@@ -1,8 +1,12 @@
+import random
 import uuid
 from datetime import datetime, timezone
 
 GMP_REQUIRED_CATEGORIES = {"Active Ingredient", "Excipient"}
 MAX_DEFECT_RATE_PCT = 0.05
+
+DELIVERY_VARIANCE_RATE = 0.20
+DELIVERY_VARIANCE_RANGE = (0.10, 0.20)  # 10-20%, clear of validate.py's 2% match tolerance
 
 
 def _available_capacity(supplier: dict) -> float:
@@ -71,4 +75,34 @@ def generate_po(requisition: dict, supplier: dict) -> dict:
         "lead_time_days": supplier["lead_time_days"],
         "destination_dc": requisition["destination_dc"],
         "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def simulate_delivery(po_id: str, quantity_ordered: float) -> dict:
+    """
+    Synthetic goods-receipt generator. ~80% of deliveries arrive exactly as
+    ordered; the rest deliberately short- or over-deliver by 10-20% (chosen
+    to sit well clear of validate.py's 2% three_way_match tolerance, so
+    these cases reliably flag rather than landing in ambiguous territory).
+    """
+    variance_applied = random.random() < DELIVERY_VARIANCE_RATE
+    if variance_applied:
+        pct = random.uniform(*DELIVERY_VARIANCE_RANGE)
+        sign = random.choice([-1, 1])
+        quantity_received = round(quantity_ordered * (1 + sign * pct), 2)
+    else:
+        pct = 0.0
+        sign = 0
+        quantity_received = quantity_ordered
+
+    return {
+        "gr_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
+        "po_id": po_id,
+        "quantity_received": quantity_received,
+        "status": "Validated",
+        # not persisted to goods_receipts (not part of its schema) — surfaced
+        # in the API response only, for demo transparency
+        "quantity_ordered": quantity_ordered,
+        "variance_applied": variance_applied,
+        "variance_pct": round(sign * pct * 100, 2),
     }

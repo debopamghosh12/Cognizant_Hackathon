@@ -42,3 +42,13 @@ class POResponse(BaseModel):
     lead_time_days: int
     destination_dc: str
     created_at: str
+
+
+class GoodsReceiptResponse(BaseModel):
+    gr_id: str
+    po_id: str
+    quantity_received: float
+    status: str
+    quantity_ordered: float
+    variance_applied: bool
+    variance_pct: float

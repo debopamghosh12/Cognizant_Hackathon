@@ -100,6 +100,25 @@ def list_purchase_orders() -> list[dict]:
     conn.close()
     return [dict(r) for r in rows]
 
+def get_purchase_order(po_id: str) -> dict | None:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM purchase_orders WHERE po_id=?", (po_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def insert_goods_receipt(gr: dict) -> str:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO goods_receipts (gr_id, po_id, quantity_received, status)
+        VALUES (?, ?, ?, ?)
+    """, (gr["gr_id"], gr["po_id"], gr["quantity_received"], gr["status"]))
+    conn.commit()
+    conn.close()
+    return gr["gr_id"]
+
 def insert_dummy_po_and_gr():
     """For standalone testing before B1/B3's modules are merged in."""
     conn = get_connection()
