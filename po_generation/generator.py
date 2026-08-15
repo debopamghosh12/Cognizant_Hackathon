@@ -86,22 +86,33 @@ def generate_po(requisition: dict, supplier: dict) -> dict:
     }
 
 
-def simulate_delivery(po_id: str, quantity_ordered: float) -> dict:
+def simulate_delivery(
+    po_id: str, quantity_ordered: float, quantity_received_override: float | None = None
+) -> dict:
     """
-    Synthetic goods-receipt generator. ~80% of deliveries arrive exactly as
-    ordered; the rest deliberately short- or over-deliver by 10-20% (chosen
-    to sit well clear of validate.py's 2% three_way_match tolerance, so
-    these cases reliably flag rather than landing in ambiguous territory).
+    Synthetic goods-receipt generator. If quantity_received_override is
+    given, it's used exactly and the random logic is skipped entirely --
+    lets a demo deliberately produce a specific mismatch instead of
+    waiting for the random path to land on one. Otherwise: ~80% of
+    deliveries arrive exactly as ordered; the rest deliberately short- or
+    over-deliver by 10-20% (chosen to sit well clear of validate.py's 2%
+    three_way_match tolerance, so these cases reliably flag rather than
+    landing in ambiguous territory).
     """
-    variance_applied = random.random() < DELIVERY_VARIANCE_RATE
-    if variance_applied:
+    if quantity_received_override is not None:
+        quantity_received = quantity_received_override
+    elif random.random() < DELIVERY_VARIANCE_RATE:
         pct = random.uniform(*DELIVERY_VARIANCE_RANGE)
         sign = random.choice([-1, 1])
         quantity_received = round(quantity_ordered * (1 + sign * pct), 2)
     else:
-        pct = 0.0
-        sign = 0
         quantity_received = quantity_ordered
+
+    # Computed once from the actual (settled) quantity_received, regardless
+    # of which path produced it -- one formula, not separate bookkeeping
+    # per path.
+    variance_applied = quantity_received != quantity_ordered
+    variance_pct = round((quantity_received - quantity_ordered) / quantity_ordered * 100, 2) if quantity_ordered else 0.0
 
     return {
         "gr_id": f"GR-{uuid.uuid4().hex[:8].upper()}",
@@ -112,7 +123,7 @@ def simulate_delivery(po_id: str, quantity_ordered: float) -> dict:
         # in the API response only, for demo transparency
         "quantity_ordered": quantity_ordered,
         "variance_applied": variance_applied,
-        "variance_pct": round(sign * pct * 100, 2),
+        "variance_pct": variance_pct,
     }
 
 

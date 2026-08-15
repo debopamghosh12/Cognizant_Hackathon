@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from .generator import generate_po, simulate_delivery, build_match_rows
-from .schemas import GeneratePORequest, POResponse, GoodsReceiptResponse
+from .schemas import GeneratePORequest, POResponse, GoodsReceiptResponse, SimulateDeliveryRequest
 
 app = FastAPI(title="PO Generation")
 
@@ -40,12 +40,12 @@ def list_purchase_orders_endpoint():
 
 
 @app.post("/simulate-delivery/{po_id}", response_model=GoodsReceiptResponse, status_code=201)
-def simulate_delivery_endpoint(po_id: str):
+def simulate_delivery_endpoint(po_id: str, body: SimulateDeliveryRequest = SimulateDeliveryRequest()):
     po = database.get_purchase_order(po_id)
     if po is None:
         raise HTTPException(status_code=404, detail=f"purchase order '{po_id}' not found")
 
-    gr = simulate_delivery(po_id, po["quantity_ordered"])
+    gr = simulate_delivery(po_id, po["quantity_ordered"], body.quantity_received)
     database.insert_goods_receipt(gr)
     return gr
 

@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RequisitionIn(BaseModel):
@@ -42,6 +42,10 @@ class POResponse(BaseModel):
     lead_time_days: int
     destination_dc: str
     created_at: str
+
+
+class SimulateDeliveryRequest(BaseModel):
+    quantity_received: Optional[float] = Field(default=None, ge=0)
 
 
 class GoodsReceiptResponse(BaseModel):

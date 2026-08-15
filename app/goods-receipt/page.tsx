@@ -4,6 +4,7 @@ import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle } from "luc
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -14,6 +15,7 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
   const [isReceiving, setIsReceiving] = React.useState(false);
   const [result, setResult] = React.useState<ReceiveDeliveryResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [quantityInput, setQuantityInput] = React.useState("");
 
   const hasDelivery = delivery.receivedQty !== null;
   const pct = hasDelivery ? Math.round(((delivery.receivedQty ?? 0) / delivery.orderedQty) * 100) : 0;
@@ -22,7 +24,8 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
     setIsReceiving(true);
     setError(null);
     try {
-      const res = await receiveDelivery(delivery.id);
+      const override = quantityInput.trim() === "" ? undefined : Number(quantityInput);
+      const res = await receiveDelivery(delivery.id, override);
       setResult(res);
       onReceived();
     } catch (e) {
@@ -87,6 +90,18 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
           </Badge>
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
+
+        {!hasDelivery && (
+          <Input
+            type="number"
+            min={0}
+            placeholder="Actual qty (optional)"
+            value={quantityInput}
+            onChange={(e) => setQuantityInput(e.target.value)}
+            disabled={isReceiving}
+            className="text-sm"
+          />
+        )}
 
         <Button className="w-full" disabled={hasDelivery || isReceiving} onClick={handleReceive}>
           <PackageCheck size={15} />

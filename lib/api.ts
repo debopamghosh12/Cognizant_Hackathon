@@ -242,8 +242,16 @@ export interface ReceiveDeliveryResult {
   variance_pct: number;
 }
 
-export async function receiveDelivery(poId: string): Promise<ReceiveDeliveryResult> {
-  const res = await fetch(`/api/simulate-delivery/${poId}`, { method: "POST" });
+export async function receiveDelivery(poId: string, quantityReceived?: number): Promise<ReceiveDeliveryResult> {
+  const res = await fetch(`/api/simulate-delivery/${poId}`, {
+    method: "POST",
+    ...(quantityReceived != null
+      ? {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quantity_received: quantityReceived }),
+        }
+      : {}),
+  });
   if (!res.ok) {
     throw new Error(`Failed to record delivery for ${poId}: ${res.status}`);
   }
