@@ -92,6 +92,14 @@ def insert_purchase_order(po: dict) -> str:
     conn.close()
     return po["po_id"]
 
+def list_purchase_orders() -> list[dict]:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    rows = cur.execute("SELECT * FROM purchase_orders ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def insert_dummy_po_and_gr():
     """For standalone testing before B1/B3's modules are merged in."""
     conn = get_connection()

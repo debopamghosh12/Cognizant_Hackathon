@@ -7,11 +7,23 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { purchaseOrders, type PurchaseOrder } from "@/lib/data";
+import type { PurchaseOrder } from "@/lib/data";
+import { getPurchaseOrders } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 export default function PurchaseOrdersPage() {
-  const [selected, setSelected] = React.useState<PurchaseOrder>(purchaseOrders[0]);
+  const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [selected, setSelected] = React.useState<PurchaseOrder | null>(null);
+
+  React.useEffect(() => {
+    getPurchaseOrders()
+      .then((data) => {
+        setPurchaseOrders(data);
+        setSelected(data[0] ?? null);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
 
   return (
     <div className="animate-fade-in">
@@ -38,7 +50,7 @@ export default function PurchaseOrdersPage() {
                   key={po.id}
                   onClick={() => setSelected(po)}
                   className={
-                    "cursor-pointer " + (selected.id === po.id ? "bg-primary-50 dark:bg-primary-500/10" : "")
+                    "cursor-pointer " + (selected?.id === po.id ? "bg-primary-50 dark:bg-primary-500/10" : "")
                   }
                 >
                   <TableCell className="font-medium text-primary-700 dark:text-primary-400">
@@ -59,10 +71,18 @@ export default function PurchaseOrdersPage() {
                   <TableCell className="text-right font-medium">{formatCurrency(po.amount)}</TableCell>
                 </TableRow>
               ))}
+              {purchaseOrders.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    {isLoading ? "Loading purchase orders..." : "No purchase orders yet."}
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </Card>
 
+        {selected && (
         <Card className="xl:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -127,6 +147,7 @@ export default function PurchaseOrdersPage() {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
     </div>
   );

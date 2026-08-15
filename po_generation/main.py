@@ -28,3 +28,8 @@ def generate_po_endpoint(body: GeneratePORequest):
 
     database.insert_purchase_order(po)
     return po
+
+
+@app.get("/purchase-orders")
+def list_purchase_orders_endpoint():
+    return database.list_purchase_orders()
