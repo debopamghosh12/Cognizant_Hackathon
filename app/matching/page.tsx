@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send } from "lucide-react";
+import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,22 @@ const EXTRACTION_STATUS_LABEL: Record<string, string> = {
 export default function MatchingPage() {
   const [matches, setMatches] = React.useState<InvoiceMatch[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+  const loadMatches = React.useCallback(() => getInvoiceMatches().then(setMatches), []);
 
   React.useEffect(() => {
-    getInvoiceMatches()
-      .then(setMatches)
-      .finally(() => setIsLoading(false));
-  }, []);
+    loadMatches().finally(() => setIsLoading(false));
+  }, [loadMatches]);
+
+  async function handleAutoMatch() {
+    setIsRefreshing(true);
+    try {
+      await loadMatches();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   const selected = matches[0] ?? null;
   const rows = selected?.rows ?? [];
@@ -45,8 +55,9 @@ export default function MatchingPage() {
             <Button variant="outline" size="sm">
               <Send size={15} /> Send for Review
             </Button>
-            <Button size="sm">
-              <Wand2 size={15} /> Auto Match
+            <Button size="sm" onClick={handleAutoMatch} disabled={isRefreshing}>
+              {isRefreshing ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
+              {isRefreshing ? "Matching..." : "Auto Match"}
             </Button>
           </>
         }

@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import Link from "next/link";
 import { Plus, Search, SlidersHorizontal, Download } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -37,6 +38,36 @@ export default function RequisitionsPage() {
     return matchesQuery && matchesStatus;
   });
 
+  function handleExport() {
+    const headers = [
+      "Requisition ID", "Requester", "SKU", "Item Name", "Quantity",
+      "Source Warehouse", "Destination DC", "Priority", "Status",
+      "Estimated Cost", "Created Date",
+    ];
+    const escape = (v: string | number) => {
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [
+      headers.join(","),
+      ...filtered.map((r) =>
+        [r.id, r.requester, r.sku, r.itemName, r.quantity, r.sourceWarehouse,
+         r.destinationDC, r.priority, r.status, r.estimatedCost, r.createdDate]
+          .map(escape)
+          .join(",")
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `requisitions-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="animate-fade-in">
       <PageHeader
@@ -44,11 +75,13 @@ export default function RequisitionsPage() {
         description={`${requisitions.length} requisitions across all warehouses`}
         action={
           <>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
               <Download size={15} /> Export
             </Button>
-            <Button size="sm">
-              <Plus size={15} /> Create Requisition
+            <Button size="sm" asChild>
+              <Link href="/assistant">
+                <Plus size={15} /> Create Requisition
+              </Link>
             </Button>
           </>
         }
