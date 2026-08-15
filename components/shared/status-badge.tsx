@@ -15,7 +15,7 @@ const statusMap: Record<string, { variant: "success" | "warning" | "destructive"
   "Awaiting Receipt": { variant: "neutral" },
   "Fully Received": { variant: "success" },
   "Delayed": { variant: "destructive" },
-  "Processed": { variant: "info" },
+  "Awaiting Delivery": { variant: "info" },
   "Needs Review": { variant: "warning" },
   "Matched": { variant: "success" },
   "Flagged": { variant: "destructive" },

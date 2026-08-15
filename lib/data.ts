@@ -87,7 +87,7 @@ export interface Delivery {
 // built directly from real purchase_orders + goods_receipts — see
 // app/goods-receipt/page.tsx.
 
-export type InvoiceStatus = "Processed" | "Needs Review" | "Matched" | "Flagged";
+export type InvoiceStatus = "Awaiting Delivery" | "Needs Review" | "Matched" | "Flagged";
 
 export interface InvoiceRecord {
   id: string;

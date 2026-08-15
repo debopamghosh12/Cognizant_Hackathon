@@ -268,7 +268,7 @@ function deriveInvoiceStatus(raw: RawInvoice): InvoiceStatus {
   if (raw.extraction_status !== "Extracted") return "Needs Review";
   if (raw.match_status === "Approved") return "Matched";
   if (raw.match_status === "Flagged_For_Review") return "Flagged";
-  return "Processed"; // Awaiting_Goods_Receipt
+  return "Awaiting Delivery"; // Awaiting_Goods_Receipt
 }
 
 function transformInvoice(raw: RawInvoice): InvoiceRecord {
