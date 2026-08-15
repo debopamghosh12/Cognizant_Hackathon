@@ -125,7 +125,15 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
     available -- an Incomplete/Failed extraction has no invoice
     quantities, and a missing GR means there's nothing to compare
     quantity_received against.
+
+    No GR at all means match_status is "Awaiting_Goods_Receipt" -- no
+    match was ever attempted, so returning a partial (Quantity Ordered /
+    Total Amount) comparison here would misleadingly imply one was, with
+    a fabricated match score. Return no rows in that case.
     """
+    if gr is None:
+        return []
+
     rows = []
 
     if invoice.get("quantity_ordered") is not None:
