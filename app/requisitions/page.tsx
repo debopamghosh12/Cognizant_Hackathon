@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Requisition } from "@/lib/data";
-import { getRequisitions } from "@/lib/api";
+import { getRequisitions, getConvertedRequisitionIds } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 const statusFilters = ["All", "PENDING", "APPROVED", "AUTO_APPROVED", "REJECTED", "CONVERTED_TO_PO"];
@@ -22,8 +22,12 @@ export default function RequisitionsPage() {
   const [status, setStatus] = React.useState("All");
 
   React.useEffect(() => {
-    getRequisitions()
-      .then(setRequisitions)
+    Promise.all([getRequisitions(), getConvertedRequisitionIds()])
+      .then(([reqs, convertedIds]) => {
+        setRequisitions(
+          reqs.map((r) => (convertedIds.has(r.id) ? { ...r, status: "CONVERTED_TO_PO" as const } : r))
+        );
+      })
       .finally(() => setIsLoading(false));
   }, []);
 

@@ -240,6 +240,17 @@ export async function getPurchaseOrders(): Promise<PurchaseOrder[]> {
   return raw.map(transformPurchaseOrder);
 }
 
+// Derived, not written back: chatbot has no endpoint to update a
+// requisition's status, and po_generation already records requisition_id
+// on every PO it creates -- so "has this requisition been converted" is
+// computed fresh from po_generation's own data each time, rather than
+// chatbot's requisition row ever being mutated. Same pattern as Delivery/
+// Invoice status elsewhere in this file.
+export async function getConvertedRequisitionIds(): Promise<Set<string>> {
+  const purchaseOrders = await getPurchaseOrders();
+  return new Set(purchaseOrders.map((po) => po.requisitionId).filter((id) => id !== "—"));
+}
+
 // The 3-way match comparison itself is computed server-side (po_generation's
 // build_match_rows(), reusing src/validate.py's within_tolerance() directly)
 // so this stays a thin pass-through rather than a second, potentially

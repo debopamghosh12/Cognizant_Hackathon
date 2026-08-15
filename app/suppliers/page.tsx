@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import type { Supplier, Requisition } from "@/lib/data";
-import { getSuppliers, getRequisitions, generatePO } from "@/lib/api";
+import { getSuppliers, getRequisitions, getConvertedRequisitionIds, generatePO } from "@/lib/api";
 
 function SupplierCard({ supplier, requisitions }: { supplier: Supplier; requisitions: Requisition[] }) {
   const router = useRouter();
@@ -125,10 +125,12 @@ export default function SuppliersPage() {
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    Promise.all([getSuppliers(), getRequisitions()])
-      .then(([s, r]) => {
+    Promise.all([getSuppliers(), getRequisitions(), getConvertedRequisitionIds()])
+      .then(([s, reqs, convertedIds]) => {
         setSuppliers(s);
-        setRequisitions(r);
+        setRequisitions(
+          reqs.map((r) => (convertedIds.has(r.id) ? { ...r, status: "CONVERTED_TO_PO" as const } : r))
+        );
       })
       .finally(() => setIsLoading(false));
   }, []);
