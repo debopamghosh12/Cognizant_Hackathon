@@ -2,3 +2,15 @@ node_modules
 .next
 out
 .env*
+tsconfig.tsbuildinfo
+
+**/__pycache__/
+*.pyc
+*.db
+venv/
+chatbot/generated_pos/
+**/generated_invoices/
+output/printable_invoices/*.pdf
+*.txt
+!requirements.txt
+!README.md

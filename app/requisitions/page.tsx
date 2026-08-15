@@ -8,14 +8,23 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { requisitions } from "@/lib/data";
+import type { Requisition } from "@/lib/data";
+import { getRequisitions } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 const statusFilters = ["All", "PENDING", "APPROVED", "AUTO_APPROVED", "REJECTED", "CONVERTED_TO_PO"];
 
 export default function RequisitionsPage() {
+  const [requisitions, setRequisitions] = React.useState<Requisition[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
   const [query, setQuery] = React.useState("");
   const [status, setStatus] = React.useState("All");
+
+  React.useEffect(() => {
+    getRequisitions()
+      .then(setRequisitions)
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const filtered = requisitions.filter((r) => {
     const matchesQuery =
@@ -113,7 +122,7 @@ export default function RequisitionsPage() {
             {filtered.length === 0 && (
               <TableRow>
                 <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
-                  No requisitions match your filters.
+                  {isLoading ? "Loading requisitions..." : "No requisitions match your filters."}
                 </TableCell>
               </TableRow>
             )}

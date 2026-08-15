@@ -24,19 +24,8 @@ export interface Requisition {
   estimatedCost: number;
 }
 
-export const requisitions: Requisition[] = [
-  { id: "REQ-2041", requester: "Ananya Sharma", sku: "MED-2201", itemName: "Paracetamol 500mg", quantity: 500, sourceWarehouse: "Kolkata Central Warehouse", destinationDC: "Siliguri DC", priority: "HIGH", status: "PENDING", createdDate: "2026-08-14", estimatedCost: 42500 },
-  { id: "REQ-2042", requester: "Anjali Mehta", sku: "MED-2201", itemName: "Paracetamol 500mg (Box of 1000)", quantity: 1200, sourceWarehouse: "Delhi Central Warehouse", destinationDC: "Gurugram DC", priority: "HIGH", status: "AUTO_APPROVED", createdDate: "2026-08-12", estimatedCost: 84000 },
-  { id: "REQ-2043", requester: "Rohan Kapoor", sku: "PPE-1042", itemName: "Nitrile Gloves (Case)", quantity: 450, sourceWarehouse: "Mumbai Port Warehouse", destinationDC: "Pune DC", priority: "MEDIUM", status: "PENDING", createdDate: "2026-08-12", estimatedCost: 56200 },
-  { id: "REQ-2044", requester: "Sara Iyer", sku: "PKG-3305", itemName: "Corrugated Shipping Boxes (L)", quantity: 3000, sourceWarehouse: "Bengaluru Central Hub", destinationDC: "Mysuru DC", priority: "LOW", status: "APPROVED", createdDate: "2026-08-11", estimatedCost: 39000 },
-  { id: "REQ-2045", requester: "Vikram Nair", sku: "MED-2214", itemName: "Insulin Vials 10ml", quantity: 600, sourceWarehouse: "Chennai Cold Chain Warehouse", destinationDC: "Coimbatore DC", priority: "CRITICAL", status: "AUTO_APPROVED", createdDate: "2026-08-11", estimatedCost: 215000 },
-  { id: "REQ-2046", requester: "Neha Gupta", sku: "MED-2278", itemName: "Amoxicillin 250mg Capsules", quantity: 900, sourceWarehouse: "Pune Fulfilment Center", destinationDC: "Nagpur DC", priority: "MEDIUM", status: "CONVERTED_TO_PO", createdDate: "2026-08-10", estimatedCost: 63000 },
-  { id: "REQ-2047", requester: "Arjun Rao", sku: "MED-2305", itemName: "Ibuprofen 400mg Tablets", quantity: 700, sourceWarehouse: "Hyderabad Plant Warehouse", destinationDC: "Warangal DC", priority: "LOW", status: "REJECTED", createdDate: "2026-08-09", estimatedCost: 45500 },
-  { id: "REQ-2048", requester: "Divya Menon", sku: "MED-2201", itemName: "Paracetamol 500mg (Box of 1000)", quantity: 800, sourceWarehouse: "Kolkata Central Warehouse", destinationDC: "Durgapur DC", priority: "HIGH", status: "PENDING", createdDate: "2026-08-09", estimatedCost: 56000 },
-  { id: "REQ-2049", requester: "Karan Malhotra", sku: "MED-2340", itemName: "Cetirizine 10mg Tablets", quantity: 1000, sourceWarehouse: "Delhi Central Warehouse", destinationDC: "Jaipur DC", priority: "LOW", status: "APPROVED", createdDate: "2026-08-08", estimatedCost: 38000 },
-  { id: "REQ-2050", requester: "Ishita Bose", sku: "MED-2390", itemName: "Azithromycin 500mg Tablets", quantity: 350, sourceWarehouse: "Mumbai Port Warehouse", destinationDC: "Nashik DC", priority: "MEDIUM", status: "AUTO_APPROVED", createdDate: "2026-08-07", estimatedCost: 61250 },
-  { id: "REQ-2051", requester: "Manish Trivedi", sku: "MED-2230", itemName: "Surgical Masks (Carton)", quantity: 1500, sourceWarehouse: "Chennai Cold Chain Warehouse", destinationDC: "Madurai DC", priority: "CRITICAL", status: "CONVERTED_TO_PO", createdDate: "2026-08-06", estimatedCost: 97500 },
-];
+// `requisitions` used to be a static mock array here. It's now fetched live
+// via getRequisitions() in lib/api.ts — see app/requisitions/page.tsx.
 
 export interface Supplier {
   id: string;
