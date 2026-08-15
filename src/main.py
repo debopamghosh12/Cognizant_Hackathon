@@ -1,6 +1,6 @@
 import os
 import uuid
-from database import get_connection, init_db, insert_dummy_po_and_gr
+from database import get_connection, init_db, insert_dummy_po_and_gr, list_purchase_orders
 from extract import extract_invoice_data
 from validate import has_missing_fields, three_way_match
 from generate_invoice import generate_printable_invoice
@@ -16,7 +16,10 @@ def get_po_and_gr(po_id):
     conn.close()
 
     po_record = {"quantity_ordered": po_row[0], "price_per_unit": po_row[1], "total_budget": po_row[2]}
-    gr_record = {"quantity_received": gr_row[0]}
+    # No GRN module exists yet to write goods_receipts for a real PO, so this
+    # is an expected, routine state -- not an error. Caller checks for None
+    # and skips the 3-way match rather than treating it as a data problem.
+    gr_record = {"quantity_received": gr_row[0]} if gr_row else None
     return po_record, gr_record
 
 def save_invoice_record(invoice_id, po_id, extracted_data, extraction_status, match_status, printable_path):
@@ -48,6 +51,11 @@ def process_invoice(image_path, po_id):
         return
 
     po_record, gr_record = get_po_and_gr(po_id)
+    if gr_record is None:
+        print(f"No GRN found for {po_id} — skipping 3-way match until goods receipt is recorded.")
+        save_invoice_record(invoice_id, po_id, extracted_data, "Extracted", "Awaiting_Goods_Receipt", None)
+        return
+
     match_status, issues = three_way_match(extracted_data, po_record, gr_record)
 
     if match_status == "Flagged_For_Review":
@@ -61,8 +69,20 @@ def process_invoice(image_path, po_id):
 
 if __name__ == "__main__":
     init_db()
-    insert_dummy_po_and_gr()   # remove once merged with B1/B3's real PO/GR data
+    if os.environ.get("SEED_DUMMY_DATA", "false").lower() == "true":
+        insert_dummy_po_and_gr()
+
+    existing_pos = list_purchase_orders()
+    if not existing_pos:
+        raise SystemExit(
+            "No purchase orders found in purchase_orders. Either generate a "
+            "real one first (po_generation's POST /generate-po), or run "
+            "again with SEED_DUMMY_DATA=true to seed a dummy PO/GR for "
+            "standalone testing."
+        )
+    po_id = existing_pos[0]["po_id"]
+    print(f"Using most recent purchase order: {po_id}")
 
     for filename in os.listdir(SAMPLE_INVOICE_DIR):
         if filename.lower().endswith((".jpg", ".jpeg", ".png")):
-            process_invoice(os.path.join(SAMPLE_INVOICE_DIR, filename), po_id="PO001")
+            process_invoice(os.path.join(SAMPLE_INVOICE_DIR, filename), po_id=po_id)
