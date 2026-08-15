@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier } from "@/lib/data";
 
 interface RawRequisition {
   id: number;
@@ -49,4 +49,60 @@ export async function getRequisitions(): Promise<Requisition[]> {
   }
   const raw: RawRequisition[] = await res.json();
   return raw.map(transformRequisition);
+}
+
+// One row per supplier, already collapsed from the supplier x SKU catalog
+// server-side by app/api/suppliers/route.ts (best row per supplier_id by
+// suitability_score, plus a `contracts` count computed across all of that
+// supplier's rows). See docs/SCHEMA.md and the plan for why: unit_price
+// isn't comparable across different SKUs, so this transform never blends
+// fields from more than one row per supplier (except `contracts`).
+interface RawSupplier {
+  supplier_id: string;
+  supplier_name: string;
+  country: string;
+  category: string;
+  unit_price: string;
+  lead_time_days: string;
+  on_time_delivery_pct: string;
+  quality_score: string;
+  risk_tier: "LOW" | "MEDIUM" | "HIGH";
+  is_preferred: string; // "True" | "False"
+  contracts: number;
+}
+
+function transformSupplier(raw: RawSupplier): Supplier {
+  const isPreferred = raw.is_preferred === "True";
+  let performance: Supplier["performance"];
+  if (isPreferred) {
+    performance = "Preferred";
+  } else if (raw.risk_tier === "LOW") {
+    performance = "Approved";
+  } else if (raw.risk_tier === "MEDIUM") {
+    performance = "Watchlist";
+  } else {
+    performance = "Under Review";
+  }
+
+  return {
+    id: raw.supplier_id,
+    name: raw.supplier_name,
+    category: raw.category,
+    reliabilityScore: Math.round(parseFloat(raw.quality_score) * 100),
+    leadTimeDays: parseInt(raw.lead_time_days, 10),
+    unitCost: parseFloat(raw.unit_price),
+    performance,
+    onTimeDelivery: Math.round(parseFloat(raw.on_time_delivery_pct) * 100),
+    location: raw.country,
+    contracts: raw.contracts,
+  };
+}
+
+export async function getSuppliers(): Promise<Supplier[]> {
+  const res = await fetch("/api/suppliers");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch suppliers: ${res.status}`);
+  }
+  const raw: RawSupplier[] = await res.json();
+  return raw.map(transformSupplier);
 }

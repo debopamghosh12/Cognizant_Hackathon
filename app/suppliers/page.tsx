@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import { MapPin, Clock, IndianRupee, FileCheck2, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -6,14 +7,26 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { suppliers } from "@/lib/data";
+import type { Supplier } from "@/lib/data";
+import { getSuppliers } from "@/lib/api";
 
 export default function SuppliersPage() {
+  const [suppliers, setSuppliers] = React.useState<Supplier[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    getSuppliers()
+      .then(setSuppliers)
+      .finally(() => setIsLoading(false));
+  }, []);
+
   return (
     <div className="animate-fade-in">
       <PageHeader
         title="Suppliers"
-        description={`${suppliers.length} qualified suppliers across your procurement network`}
+        description={
+          isLoading ? "Loading suppliers..." : `${suppliers.length} qualified suppliers across your procurement network`
+        }
         action={<Button size="sm">Add Supplier</Button>}
       />
 

@@ -40,14 +40,8 @@ export interface Supplier {
   contracts: number;
 }
 
-export const suppliers: Supplier[] = [
-  { id: "SUP-001", name: "MedSource Pharmaceuticals", category: "Pharma & Medical", reliabilityScore: 96, leadTimeDays: 3, unitCost: 6.8, performance: "Preferred", onTimeDelivery: 98, location: "Ahmedabad, IN", contracts: 4 },
-  { id: "SUP-002", name: "Apex Industrial Supplies", category: "Industrial & MRO", reliabilityScore: 89, leadTimeDays: 5, unitCost: 42.1, performance: "Approved", onTimeDelivery: 91, location: "Pune, IN", contracts: 2 },
-  { id: "SUP-003", name: "Global PackTech Ltd.", category: "Packaging", reliabilityScore: 82, leadTimeDays: 6, unitCost: 1.3, performance: "Approved", onTimeDelivery: 87, location: "Chennai, IN", contracts: 3 },
-  { id: "SUP-004", name: "NovaMed Distribution", category: "Pharma & Medical", reliabilityScore: 74, leadTimeDays: 8, unitCost: 6.2, performance: "Watchlist", onTimeDelivery: 76, location: "Nagpur, IN", contracts: 1 },
-  { id: "SUP-005", name: "Sunrise Electronics Co.", category: "Electronics", reliabilityScore: 91, leadTimeDays: 4, unitCost: 210.0, performance: "Preferred", onTimeDelivery: 95, location: "Bengaluru, IN", contracts: 5 },
-  { id: "SUP-006", name: "Vertex Chemicals & Lubes", category: "Industrial & MRO", reliabilityScore: 65, leadTimeDays: 11, unitCost: 88.5, performance: "Under Review", onTimeDelivery: 68, location: "Vadodara, IN", contracts: 1 },
-];
+// `suppliers` used to be a static mock array here. It's now fetched live
+// via getSuppliers() in lib/api.ts — see app/suppliers/page.tsx.
 
 export interface PurchaseOrder {
   id: string;
