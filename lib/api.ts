@@ -444,6 +444,62 @@ export async function generateInvoice(poId: string): Promise<InvoiceRecord> {
   return transformInvoice({ ...data, supplier_id: null });
 }
 
+// Upload Invoice (real OCR) -- the second, additional path alongside
+// Generate Invoice above. Never touches that function.
+export interface ParsedInvoiceFields {
+  quantityOrdered: number | null;
+  quantityReceived: number | null;
+  pricePerUnit: number | null;
+  totalAmount: number | null;
+  poReference: string | null;
+}
+
+export interface OcrResult {
+  rawText: string;
+  parsed: ParsedInvoiceFields;
+}
+
+// Runs Google Cloud Vision DOCUMENT_TEXT_DETECTION on the uploaded file via
+// app/api/invoices/ocr/route.ts (server-side only -- the API key never
+// reaches the browser) and returns the raw text plus best-effort parsed
+// fields. Any field the parser couldn't confidently find comes back null,
+// never fabricated -- the review step is what lets a human fill those in.
+export async function runInvoiceOcr(file: File): Promise<OcrResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch("/api/invoices/ocr", { method: "POST", body: formData });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : `OCR failed: ${res.status}`);
+  }
+  return data;
+}
+
+export interface ConfirmedInvoiceFields {
+  quantity_ordered: number;
+  quantity_received: number;
+  price_per_unit: number;
+  total_amount: number;
+}
+
+// Submits the user-CONFIRMED (real-OCR-derived or manually corrected)
+// fields for a specific PO -- backed by po_generation's
+// /purchase-orders/{po_id}/submit-ocr-invoice, which reuses the exact same
+// three_way_match()/insert_invoice() calls generate-invoice does. Never
+// silently trusted the way Generate Invoice's synthetic numbers are.
+export async function submitOcrInvoice(poId: string, confirmed: ConfirmedInvoiceFields): Promise<InvoiceRecord> {
+  const res = await fetch(`/api/purchase-orders/${poId}/submit-ocr-invoice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(confirmed),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Failed to submit invoice: ${res.status}`);
+  }
+  return transformInvoice({ ...data, supplier_id: null });
+}
+
 function transformInvoice(raw: RawInvoice): InvoiceRecord {
   return {
     id: raw.invoice_id,

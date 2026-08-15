@@ -62,6 +62,17 @@ class InvoiceDecisionRequest(BaseModel):
     action: Literal["approve", "reject", "escalate"]
 
 
+class OCRInvoiceRequest(BaseModel):
+    # User-confirmed fields from the Upload Invoice review step -- never
+    # auto-trusted the way generate_synthetic_invoice()'s jittered numbers
+    # are, hence no defaults here; the review step's "Confirm & Match"
+    # action is what fills these in, real OCR values or manual corrections.
+    quantity_ordered: float
+    quantity_received: float
+    price_per_unit: float
+    total_amount: float
+
+
 class InvoiceResponse(BaseModel):
     invoice_id: str
     po_id: str

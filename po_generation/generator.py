@@ -144,6 +144,40 @@ def generate_synthetic_invoice(po: dict, gr: dict) -> dict:
     }
 
 
+def build_invoice_from_ocr(po: dict, gr: dict, confirmed: dict) -> dict:
+    """
+    Same invoice-dict shape and same three_way_match() call as
+    generate_synthetic_invoice() above -- the only difference is where the
+    numbers come from: user-confirmed values from the Upload Invoice review
+    step (real OCR, corrected by a human) instead of jittered synthetic
+    ones. Kept as a separate function so the tested Generate Invoice path
+    (generate_synthetic_invoice) is never touched by this one.
+
+    confirmed: {quantity_ordered, quantity_received, price_per_unit, total_amount}
+    """
+    extracted_data = {
+        "quantity_ordered": confirmed["quantity_ordered"],
+        "quantity_received": confirmed["quantity_received"],
+        "total_amount": confirmed["total_amount"],
+    }
+    match_status, issues = three_way_match(extracted_data, po, gr)
+
+    return {
+        "invoice_id": f"INV-{uuid.uuid4().hex[:8].upper()}",
+        "po_id": po["po_id"],
+        "gr_id": gr["gr_id"],
+        "item_name": po["item_name"],
+        "quantity_ordered": confirmed["quantity_ordered"],
+        "quantity_received": confirmed["quantity_received"],
+        "price_per_unit": confirmed["price_per_unit"],
+        "total_amount": confirmed["total_amount"],
+        "extraction_status": "Extracted",
+        "match_status": match_status,
+        "printable_path": None,
+        "issues": issues,
+    }
+
+
 def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
     """
     Recomputes the same 3 checks three_way_match() (src/validate.py)

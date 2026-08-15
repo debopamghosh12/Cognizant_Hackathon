@@ -9,11 +9,11 @@ import database  # src/database.py — purchase_orders table lives here
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
-from .generator import generate_po, generate_synthetic_invoice, build_match_rows
+from .generator import generate_po, generate_synthetic_invoice, build_invoice_from_ocr, build_match_rows
 from . import predictive
 from .schemas import (
     GeneratePORequest, POResponse, GoodsReceiptResponse, SimulateDeliveryRequest,
-    InvoiceResponse, InvoiceDecisionRequest,
+    InvoiceResponse, InvoiceDecisionRequest, OCRInvoiceRequest,
 )
 
 app = FastAPI(title="PO Generation")
@@ -77,6 +77,31 @@ def generate_invoice_endpoint(po_id: str):
         raise HTTPException(status_code=400, detail=f"purchase order '{po_id}' has no goods receipt yet")
 
     invoice = generate_synthetic_invoice(po, gr)
+    anomaly = predictive.compute_invoice_anomaly(invoice, po["supplier_id"])
+    invoice["is_predictive_anomaly"] = anomaly["is_predictive_anomaly"]
+    invoice["predictive_anomaly_reason"] = anomaly["predictive_anomaly_reason"]
+    database.insert_invoice(invoice)
+    return invoice
+
+
+@app.post("/purchase-orders/{po_id}/submit-ocr-invoice", response_model=InvoiceResponse, status_code=201)
+def submit_ocr_invoice_endpoint(po_id: str, body: OCRInvoiceRequest):
+    # Mirrors generate_invoice_endpoint's exact guard/flow above -- only
+    # build_invoice_from_ocr() differs (user-confirmed OCR numbers instead
+    # of jittered synthetic ones); three_way_match, the anomaly check, and
+    # persistence are the identical calls, not reimplemented.
+    po = database.get_purchase_order(po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail=f"purchase order '{po_id}' not found")
+
+    if database.get_invoice_by_po(po_id) is not None:
+        raise HTTPException(status_code=409, detail=f"an invoice already exists for purchase order '{po_id}'")
+
+    gr = database.get_goods_receipt_by_po(po_id)
+    if gr is None:
+        raise HTTPException(status_code=400, detail=f"purchase order '{po_id}' has no goods receipt yet")
+
+    invoice = build_invoice_from_ocr(po, gr, body.model_dump())
     anomaly = predictive.compute_invoice_anomaly(invoice, po["supplier_id"])
     invoice["is_predictive_anomaly"] = anomaly["is_predictive_anomaly"]
     invoice["predictive_anomaly_reason"] = anomaly["predictive_anomaly_reason"]

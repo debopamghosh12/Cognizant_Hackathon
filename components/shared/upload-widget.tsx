@@ -7,7 +7,7 @@ export function UploadWidget({
   onFileProcessed,
   processing,
 }: {
-  onFileProcessed: (fileName: string) => void;
+  onFileProcessed: (file: File) => void;
   processing: boolean;
 }) {
   const [dragOver, setDragOver] = React.useState(false);
@@ -15,7 +15,7 @@ export function UploadWidget({
 
   function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
-    onFileProcessed(files[0].name);
+    onFileProcessed(files[0]);
   }
 
   return (
