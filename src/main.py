@@ -95,6 +95,20 @@ if __name__ == "__main__":
         )
     print(f"Using purchase order without an existing invoice: {po_id}")
 
+    # The pre-loop check above only ran ONCE, before any image was
+    # processed -- it stopped this script from targeting an ALREADY-
+    # invoiced PO, but nothing then stopped the loop itself from creating
+    # more than one invoice against the SAME po_id across multiple sample
+    # images in this one run (process_invoice() calls save_invoice_record()
+    # on every code path -- Failed/Incomplete/Awaiting-GR/Flagged/Approved
+    # -- so each image always adds a row). That's how a single run against
+    # a fresh PO could still dump all 6 sample images' worth of invoices
+    # onto it. Re-check before each image and stop as soon as po_id has an
+    # invoice, so this script can only ever create ONE invoice per PO,
+    # whether that's from a prior run or from earlier in this same loop.
     for filename in os.listdir(SAMPLE_INVOICE_DIR):
         if filename.lower().endswith((".jpg", ".jpeg", ".png")):
+            if get_invoice_by_po(po_id) is not None:
+                print(f"{po_id} already has an invoice -- stopping (one invoice per PO, even within this run).")
+                break
             process_invoice(os.path.join(SAMPLE_INVOICE_DIR, filename), po_id=po_id)

@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle, Radio, ScanLine } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import type { Delivery } from "@/lib/data";
 import { getDeliveries, receiveDelivery, type ReceiveDeliveryResult } from "@/lib/api";
 
 function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived: () => void }) {
+  const [isScanning, setIsScanning] = React.useState(false);
   const [isReceiving, setIsReceiving] = React.useState(false);
   const [result, setResult] = React.useState<ReceiveDeliveryResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -22,8 +23,15 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
   const pct = hasDelivery ? Math.round(((delivery.receivedQty ?? 0) / delivery.orderedQty) * 100) : 0;
 
   const handleReceive = async () => {
-    setIsReceiving(true);
+    // Purely cosmetic delay framing the manual entry below as a sensor
+    // reading being confirmed, not a real scan -- no backend call happens
+    // during this window, and none of the actual receiving logic changes.
+    setIsScanning(true);
     setError(null);
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    setIsScanning(false);
+
+    setIsReceiving(true);
     try {
       // The input is this delivery's increment (added to whatever's already
       // been received, capped at ordered qty) -- left blank delivers
@@ -55,6 +63,10 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
         <StatusBadge status={delivery.status} />
       </CardHeader>
       <CardContent className="space-y-4">
+        <Badge variant="info" className="gap-1">
+          <Radio size={11} /> Simulated via Warehouse IoT Sensors
+        </Badge>
+
         <p className="text-sm text-foreground">{delivery.supplier}</p>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Warehouse size={13} /> {delivery.destinationDC}
@@ -93,21 +105,30 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
         )}
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        {!isFullyReceived && (
-          <Input
-            type="number"
-            min={0}
-            placeholder="This delivery's qty (blank = remaining)"
-            value={quantityInput}
-            onChange={(e) => setQuantityInput(e.target.value)}
-            disabled={isReceiving}
-            className="text-sm"
-          />
+        {isScanning && (
+          <p className="flex items-center justify-center gap-1.5 text-xs font-medium text-primary-600">
+            <ScanLine size={13} className="animate-pulse" /> Scanning incoming shipment...
+          </p>
         )}
 
-        <Button className="w-full" disabled={isFullyReceived || isReceiving} onClick={handleReceive}>
+        {!isFullyReceived && (
+          <div className="space-y-1">
+            <p className="text-[11px] font-medium text-muted-foreground">Confirm sensor-detected quantity</p>
+            <Input
+              type="number"
+              min={0}
+              placeholder="This delivery's qty (blank = remaining)"
+              value={quantityInput}
+              onChange={(e) => setQuantityInput(e.target.value)}
+              disabled={isReceiving || isScanning}
+              className="text-sm"
+            />
+          </div>
+        )}
+
+        <Button className="w-full" disabled={isFullyReceived || isReceiving || isScanning} onClick={handleReceive}>
           <PackageCheck size={15} />
-          {isFullyReceived ? "Fully Received" : isReceiving ? "Recording..." : "Record Delivery"}
+          {isFullyReceived ? "Fully Received" : isScanning ? "Scanning..." : isReceiving ? "Recording..." : "Record Delivery"}
         </Button>
       </CardContent>
     </Card>

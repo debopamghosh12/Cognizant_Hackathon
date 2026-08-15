@@ -1,9 +1,10 @@
 """
 add_demo_finished_skus.py
 
-Demo-scope overlay: appends supplier rows for 4 of chatbot's finished-product
-SKU IDs (SKU-1001, SKU-1002, SKU-1007, SKU-1010) to data/suppliers.csv, using
-existing supplier identities from the main synthetic catalog.
+Demo-scope overlay: appends supplier rows for 5 of chatbot's finished-product
+SKU IDs (SKU-1001, SKU-1002, SKU-1003, SKU-1007, SKU-1010) to
+data/suppliers.csv, using existing supplier identities from the main
+synthetic catalog.
 
 Why this exists: chatbot's requisition SKUs (SKU-1001..SKU-1010, finished
 products like "Paracetamol 500mg") and the main supplier catalog's SKUs
@@ -69,6 +70,15 @@ DEMO_SKUS = [
     ("SKU-1010", [
         ("SUP-007", 3.80, 100, 3, 0.95, 0.94, 0.92, 0.009, 8000, 30),
         ("SUP-008", 3.20, 100, 5, 0.89, 0.87, 0.86, 0.018, 6000, 45),
+    ]),
+    # Added after the demo surfaced a real gap: "Order 300 units of
+    # Ibuprofen 400mg for Chennai DC" is one of the chatbot's own
+    # suggested prompts (app/assistant/page.tsx), so a requisition for
+    # this SKU is very likely to come up live -- it needs the same
+    # supplier coverage the other 4 demo SKUs already have.
+    ("SKU-1003", [
+        ("SUP-009", 0.078, 200, 3, 0.95, 0.94, 0.92, 0.009, 22000, 30),
+        ("SUP-010", 0.065, 250, 5, 0.87, 0.85, 0.84, 0.019, 17000, 45),
     ]),
 ]
 

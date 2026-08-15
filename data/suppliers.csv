@@ -155,3 +155,5 @@ SUP-005,SpectraRx Corporation,US,True,LOW,SKU-1007,Finished Product,0.045,USD,50
 SUP-006,ZenithMed International Ltd.,JP,True,LOW,SKU-1007,Finished Product,0.038,USD,500,60,6,0.85,0.84,0.8,0.028,15000,0.7122,2026-08-15,,0.7125,True
 SUP-007,OmniPharm Corporation,GB,True,LOW,SKU-1010,Finished Product,3.8,USD,100,30,3,0.95,0.94,0.92,0.009,8000,0.6436,2026-08-15,,0.6675,False
 SUP-008,MedPharm Bio-Sciences Ltd.,DE,True,LOW,SKU-1010,Finished Product,3.2,USD,100,45,5,0.89,0.87,0.86,0.018,6000,0.6515,2026-08-15,,0.7375,True
+SUP-009,CertaPharm Medical Supply,DE,True,LOW,SKU-1003,Finished Product,0.078,USD,200,30,3,0.95,0.94,0.92,0.009,22000,0.441,2026-08-15,,0.6675,False
+SUP-010,UltraRx Group LLC,IN,True,LOW,SKU-1003,Finished Product,0.065,USD,250,45,5,0.87,0.85,0.84,0.019,17000,0.5441,2026-08-15,,0.7275,True
