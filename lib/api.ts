@@ -486,6 +486,26 @@ export async function getAutomationRate(): Promise<number | null> {
   return Math.round((autoApproved / processed.length) * 1000) / 10;
 }
 
+export interface SupplierSpend {
+  supplier: string;
+  spend: number;
+}
+
+// Live replacement for lib/data.ts's mock spendBySupplier -- unlike the
+// month-by-month trend charts on the Analytics page, "top suppliers by
+// spend" is a snapshot ranking, not a time series, so it's honestly
+// computable even from a handful of real POs (just a shorter bar chart).
+export async function getSpendBySupplier(): Promise<SupplierSpend[]> {
+  const purchaseOrders = await getPurchaseOrders();
+  const bySupplier = new Map<string, number>();
+  for (const po of purchaseOrders) {
+    bySupplier.set(po.supplier, (bySupplier.get(po.supplier) ?? 0) + po.amount);
+  }
+  return Array.from(bySupplier.entries())
+    .map(([supplier, spend]) => ({ supplier, spend }))
+    .sort((a, b) => b.spend - a.spend);
+}
+
 // Average days between a requisition's creation and its PO's creation,
 // joined client-side on requisitionId the same way
 // getConvertedRequisitionIds() already does (chatbot and po_generation are

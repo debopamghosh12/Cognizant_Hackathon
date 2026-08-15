@@ -17,14 +17,14 @@ import {
 import { PageHeader } from "@/components/shared/page-header";
 import { ChartCard } from "@/components/shared/chart-card";
 import { KpiCard } from "@/components/dashboard/kpi-card";
+import { Badge } from "@/components/ui/badge";
 import { Zap, Clock, ScanText, ShoppingCart } from "lucide-react";
 import {
-  spendBySupplier,
   cycleTimeTrend,
   touchlessTrend,
   monthlyPOVolume,
 } from "@/lib/data";
-import { getAutomationRate, getAvgCycleTime } from "@/lib/api";
+import { getAutomationRate, getAvgCycleTime, getPurchaseOrders, getSpendBySupplier, type SupplierSpend } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 const tooltipStyle = {
@@ -34,13 +34,27 @@ const tooltipStyle = {
   background: "hsl(var(--card))",
 };
 
+// This dataset has only a handful of records created in one demo session
+// -- there's no real month-by-month history to plot, so these charts stay
+// illustrative rather than showing a single real data point stretched
+// across a fake "Feb-Aug" axis. IllustrativeBadge makes that explicit on
+// the page itself instead of leaving a viewer to guess which numbers are
+// live.
+function IllustrativeBadge() {
+  return <Badge variant="neutral">Illustrative data</Badge>;
+}
+
 export default function AnalyticsPage() {
   const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
   const [avgCycleTime, setAvgCycleTime] = React.useState<number | null | undefined>(undefined);
+  const [totalPOs, setTotalPOs] = React.useState<number | null>(null);
+  const [spendBySupplier, setSpendBySupplier] = React.useState<SupplierSpend[]>([]);
 
   React.useEffect(() => {
     getAutomationRate().then(setAutomationRate);
     getAvgCycleTime().then(setAvgCycleTime);
+    getPurchaseOrders().then((pos) => setTotalPOs(pos.length));
+    getSpendBySupplier().then(setSpendBySupplier);
   }, []);
 
   return (
@@ -63,24 +77,42 @@ export default function AnalyticsPage() {
           icon={Clock}
           accent="bg-green-50 text-green-600 dark:bg-green-500/10"
         />
-        <KpiCard label="Invoice Processing" value="0.9 days" icon={ScanText} trend={{ value: "-0.4d", direction: "down", positive: true }} accent="bg-violet-50 text-violet-600 dark:bg-violet-500/10" />
-        <KpiCard label="Monthly PO Volume" value="312" icon={ShoppingCart} trend={{ value: "-2.5%", direction: "down", positive: false }} accent="bg-amber-50 text-amber-600 dark:bg-amber-500/10" />
+        <KpiCard
+          label="Invoice Processing"
+          value="0.9 days"
+          icon={ScanText}
+          accent="bg-violet-50 text-violet-600 dark:bg-violet-500/10"
+          note="Illustrative — no live invoice-cycle timestamps yet"
+        />
+        <KpiCard
+          label="Monthly PO Volume"
+          value={totalPOs === null ? "…" : totalPOs.toString()}
+          icon={ShoppingCart}
+          accent="bg-amber-50 text-amber-600 dark:bg-amber-500/10"
+        />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <ChartCard title="Spend by Supplier" description="Year-to-date spend across top suppliers">
+        <ChartCard title="Spend by Supplier" description="Live total spend per supplier, across real purchase orders">
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={spendBySupplier} layout="vertical" margin={{ left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" tickFormatter={(v) => `₹${v / 100000}L`} axisLine={false} tickLine={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
                 <YAxis dataKey="supplier" type="category" width={100} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatCurrency(v)} />
               <Bar dataKey="spend" fill="#2563eb" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          {spendBySupplier.length === 0 && (
+            <p className="pt-2 text-center text-xs text-muted-foreground">No purchase orders yet.</p>
+          )}
         </ChartCard>
 
-        <ChartCard title="Procurement Cycle Time" description="Requisition-to-PO vs invoice processing (days)">
+        <ChartCard
+          title="Procurement Cycle Time"
+          description="Requisition-to-PO vs invoice processing (days)"
+          action={<IllustrativeBadge />}
+        >
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={cycleTimeTrend} margin={{ left: -20, top: 10 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
@@ -94,7 +126,11 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Touchless Processing Trend" description="Percentage of P2P cycle requiring zero human intervention">
+        <ChartCard
+          title="Touchless Processing Trend"
+          description="Percentage of P2P cycle requiring zero human intervention"
+          action={<IllustrativeBadge />}
+        >
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={touchlessTrend} margin={{ left: -20, top: 10 }}>
               <defs>
@@ -112,7 +148,11 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Monthly PO Volume" description="Total purchase orders created per month">
+        <ChartCard
+          title="Monthly PO Volume"
+          description="Total purchase orders created per month"
+          action={<IllustrativeBadge />}
+        >
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={monthlyPOVolume} margin={{ left: -20, top: 10 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />

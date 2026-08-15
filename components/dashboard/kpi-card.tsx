@@ -8,9 +8,13 @@ interface KpiCardProps {
   icon: LucideIcon;
   trend?: { value: string; direction: "up" | "down"; positive?: boolean };
   accent?: string;
+  // For cards that are still illustrative/demo data rather than computed
+  // live -- shown instead of a (fabricated) trend so it's never ambiguous
+  // which numbers on the page are real.
+  note?: string;
 }
 
-export function KpiCard({ label, value, icon: Icon, trend, accent = "bg-primary-50 text-primary-600" }: KpiCardProps) {
+export function KpiCard({ label, value, icon: Icon, trend, accent = "bg-primary-50 text-primary-600", note }: KpiCardProps) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between">
@@ -36,6 +40,7 @@ export function KpiCard({ label, value, icon: Icon, trend, accent = "bg-primary-
           <span className="text-muted-foreground">vs last month</span>
         </div>
       )}
+      {note && <p className="mt-3 text-[11px] italic text-muted-foreground">{note}</p>}
     </Card>
   );
 }
