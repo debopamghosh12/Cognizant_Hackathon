@@ -87,25 +87,21 @@ export interface Delivery {
 // built directly from real purchase_orders + goods_receipts — see
 // app/goods-receipt/page.tsx.
 
+export type InvoiceStatus = "Processed" | "Needs Review" | "Matched" | "Flagged";
+
 export interface InvoiceRecord {
   id: string;
   supplier: string;
   poId: string;
-  amount: number;
-  tax: number;
-  quantity: number;
-  invoiceDate: string;
-  ocrConfidence: number;
-  status: "Processed" | "Needs Review" | "Matched" | "Flagged";
+  quantity: number | null;
+  amount: number | null;
+  status: InvoiceStatus;
+  printablePath: string | null;
 }
 
-export const invoices: InvoiceRecord[] = [
-  { id: "INV-204", supplier: "MedSource Pharmaceuticals", poId: "PO-88231", amount: 8160, tax: 408, quantity: 1200, invoiceDate: "2026-08-13", ocrConfidence: 98.4, status: "Matched" },
-  { id: "INV-198", supplier: "Sunrise Electronics Co.", poId: "PO-88230", amount: 8400, tax: 420, quantity: 40, invoiceDate: "2026-08-12", ocrConfidence: 95.1, status: "Processed" },
-  { id: "INV-191", supplier: "Global PackTech Ltd.", poId: "PO-88228", amount: 3810, tax: 190, quantity: 3000, invoiceDate: "2026-08-10", ocrConfidence: 88.7, status: "Flagged" },
-  { id: "INV-187", supplier: "Apex Industrial Supplies", poId: "PO-88227", amount: 1870, tax: 93, quantity: 220, invoiceDate: "2026-08-09", ocrConfidence: 99.2, status: "Matched" },
-  { id: "INV-180", supplier: "MedSource Pharmaceuticals", poId: "PO-88229", amount: 20880, tax: 1044, quantity: 600, invoiceDate: "2026-08-12", ocrConfidence: 91.5, status: "Needs Review" },
-];
+// `invoices` used to be a static mock array here (with tax/invoiceDate/
+// ocrConfidence fields that don't exist in real data). It's now fetched
+// live via getInvoices() in lib/api.ts — see app/invoices/page.tsx.
 
 export interface Approval {
   id: string;

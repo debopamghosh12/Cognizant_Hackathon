@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus } from "@/lib/data";
 
 interface RawRequisition {
   id: number;
@@ -248,4 +248,46 @@ export async function receiveDelivery(poId: string): Promise<ReceiveDeliveryResu
     throw new Error(`Failed to record delivery for ${poId}: ${res.status}`);
   }
   return res.json();
+}
+
+interface RawInvoice {
+  invoice_id: string;
+  po_id: string;
+  supplier_id: string | null;
+  item_name: string | null;
+  quantity_ordered: number | null;
+  quantity_received: number | null;
+  price_per_unit: number | null;
+  total_amount: number | null;
+  extraction_status: "Failed" | "Incomplete" | "Extracted";
+  match_status: "Flagged_For_Review" | "Approved" | "Awaiting_Goods_Receipt" | null;
+  printable_path: string | null;
+}
+
+function deriveInvoiceStatus(raw: RawInvoice): InvoiceStatus {
+  if (raw.extraction_status !== "Extracted") return "Needs Review";
+  if (raw.match_status === "Approved") return "Matched";
+  if (raw.match_status === "Flagged_For_Review") return "Flagged";
+  return "Processed"; // Awaiting_Goods_Receipt
+}
+
+function transformInvoice(raw: RawInvoice): InvoiceRecord {
+  return {
+    id: raw.invoice_id,
+    supplier: raw.supplier_id ?? "—",
+    poId: raw.po_id,
+    quantity: raw.quantity_ordered,
+    amount: raw.total_amount,
+    status: deriveInvoiceStatus(raw),
+    printablePath: raw.printable_path,
+  };
+}
+
+export async function getInvoices(): Promise<InvoiceRecord[]> {
+  const res = await fetch("/api/invoices");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch invoices: ${res.status}`);
+  }
+  const raw: RawInvoice[] = await res.json();
+  return raw.map(transformInvoice);
 }

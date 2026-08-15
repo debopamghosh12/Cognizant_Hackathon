@@ -135,6 +135,14 @@ def list_invoices() -> list[dict]:
     conn.close()
     return [dict(r) for r in rows]
 
+def get_invoice(invoice_id: str) -> dict | None:
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    row = cur.execute("SELECT * FROM invoices WHERE invoice_id=?", (invoice_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def insert_goods_receipt(gr: dict) -> str:
     conn = get_connection()
     cur = conn.cursor()

@@ -7,6 +7,7 @@ if SRC_DIR not in sys.path:
 
 import database  # src/database.py — purchase_orders table lives here
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 
 from .generator import generate_po, simulate_delivery, build_match_rows
 from .schemas import GeneratePORequest, POResponse, GoodsReceiptResponse
@@ -72,3 +73,25 @@ def list_matches_endpoint():
             "rows": build_match_rows(invoice, po, gr),
         })
     return results
+
+
+@app.get("/invoices")
+def list_invoices_endpoint():
+    invoices = database.list_invoices()
+    for invoice in invoices:
+        po = database.get_purchase_order(invoice["po_id"])
+        invoice["supplier_id"] = po["supplier_id"] if po else None
+    return invoices
+
+
+@app.get("/invoices/{invoice_id}/pdf")
+def get_invoice_pdf_endpoint(invoice_id: str):
+    invoice = database.get_invoice(invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail=f"invoice '{invoice_id}' not found")
+
+    path = invoice.get("printable_path")
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=f"no printable PDF available for '{invoice_id}'")
+
+    return FileResponse(path, media_type="application/pdf", filename=f"{invoice_id}.pdf")
