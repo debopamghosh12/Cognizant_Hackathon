@@ -61,7 +61,9 @@ export default function DemandSensingPage() {
           <p>
             A simple, explainable moving-average + seasonal-multiplier forecast (not ML) compared against current
             stock and lead time. Each need is checked for a cost-effective inter-DC transfer of near-expiry stock
-            before falling back to sourcing from a supplier.
+            before falling back to sourcing from a supplier. An experimental ML forecast (XGBoost) is also
+            available per card for comparison — on our test data it does not yet outperform this rule-based
+            approach, so it remains opt-in only.
           </p>
         </CardContent>
       </Card>

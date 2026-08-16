@@ -132,3 +132,38 @@ REORDER_CADENCE_CONFIDENCE_FACTOR = {"High": 1.0, "Medium": 0.75, "Low": 0.5}
 # continuous time-at-Critical, not cumulative/lifetime time.
 ESCALATION_THRESHOLD_HOURS = 24
 ESCALATION_TARGET = "Procurement Lead"
+
+# --- Exploratory ML forecast (forecast_demand_ml(), demand_sensing/ml_forecast.py) ---
+# An ADDITIONAL, optional forecast source -- forecast_demand() above (the
+# real default every existing feature uses) is untouched by this. Trained
+# from scratch on our own real demand_history.csv -- NOT a reuse/fix of
+# models/demand_forecast_model.pkl, which is confirmed incompatible (wrong
+# SKU/DC categories, wrong capacity scale, trained on a different dataset).
+# Saved separately as models/demand_forecast_model_v2.pkl so the orphaned
+# original is never touched.
+ML_MODEL_PATH = os.path.join(BASE_DIR, "models", "demand_forecast_model_v2.pkl")
+# Real, measured metrics from the last training run (MAE/WMAPE on the
+# held-out test set, plus the naive baseline they were compared against) --
+# saved alongside the model so anything that displays "accuracy" reads the
+# actual last-measured numbers instead of a hardcoded claim that could
+# drift out of sync with the model file.
+ML_METRICS_PATH = os.path.join(BASE_DIR, "models", "demand_forecast_model_v2_metrics.json")
+ML_LAG_DAYS = [1, 7, 14, 30]
+ML_ROLLING_WINDOWS = [7, 14, 28]
+# Same recent-vs-prior order count as DISTRIBUTOR_TREND_WINDOW_ORDERS above,
+# kept as its own constant since the ML feature is a differently-encoded
+# (numeric -1/0/1) version, not a call into forecasting.py.
+ML_DISTRIBUTOR_TREND_ORDERS = 3
+ML_TEST_DAYS_PER_SERIES = 14  # held-out test window per SKU/DC series, time-based split
+
+# --- Extended-history experiment (demand_history_extended.csv) ---
+# Entirely separate from the live 90-day DEMAND_HISTORY_CSV above -- a
+# standalone experiment to test whether more synthetic history improves
+# forecast_demand_ml()'s real held-out accuracy. Never read by
+# forecasting.py, replenishment.py, ml_forecast.py, or any live endpoint.
+DEMAND_HISTORY_EXTENDED_CSV = os.path.join(BASE_DIR, "data", "demand_sensing", "demand_history_extended.csv")
+EXTENDED_HISTORY_DAYS = 730
+# Flu season recurs every year in this window (unlike the live 90-day
+# file's one-time "last 21 days" spike) -- December-January, a real,
+# recognizable annual pattern, not an arbitrary window.
+EXTENDED_FLU_SEASON_MONTHS = {12, 1}

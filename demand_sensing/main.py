@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 
-from . import database, replenishment
+from . import database, replenishment, ml_forecast
+from .forecasting import forecast_demand
 from .schemas import ReplenishmentNeed, TransferRequest
 
 app = FastAPI(title="Demand Sensing")
@@ -37,3 +38,24 @@ def initiate_transfer(body: TransferRequest):
 @app.get("/transfer-count")
 def get_transfer_count():
     return {"count": database.count_transfer_events()}
+
+
+@app.get("/replenishment-needs-ml-comparison")
+def compare_forecasts(sku_id: str, destination_dc: str):
+    """Opt-in comparison only -- does NOT touch /replenishment-needs or
+    anything it depends on. Returns the real rule-based forecast_demand()
+    output side by side with the optional forecast_demand_ml() output for
+    one SKU/DC, plus the ML model's real last-measured accuracy (never
+    hardcoded -- always whatever train_ml_forecast.py actually produced).
+    Not wired into replenishment.py or the default /replenishment-needs
+    response; the frontend calls this only when a user explicitly opts in
+    to viewing it for a specific card."""
+    rule_based = forecast_demand(sku_id, destination_dc)
+    ml = ml_forecast.forecast_demand_ml(sku_id, destination_dc)
+    return {
+        "sku_id": sku_id,
+        "destination_dc": destination_dc,
+        "rule_based": rule_based,
+        "ml": ml,
+        "ml_metrics": ml_forecast.get_model_metrics(),
+    }

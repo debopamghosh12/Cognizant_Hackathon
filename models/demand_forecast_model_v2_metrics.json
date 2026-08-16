@@ -1,0 +1,12 @@
+{
+  "trained_at": "2026-08-16T05:43:39.611160+00:00",
+  "train_rows": 690,
+  "test_rows": 210,
+  "naive_mae": 3.15,
+  "naive_wmape_pct": 10.0,
+  "linear_regression_mae": 4.59,
+  "linear_regression_wmape_pct": 14.5,
+  "xgboost_mae": 3.8,
+  "xgboost_wmape_pct": 12.0,
+  "xgboost_beats_naive": false
+}

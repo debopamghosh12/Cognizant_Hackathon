@@ -191,6 +191,54 @@ export async function getTransferEventCount(): Promise<number | null> {
   return typeof data.count === "number" ? data.count : null;
 }
 
+// Opt-in only -- called when a user explicitly asks to compare a card's
+// rule-based forecast against the experimental ML model. Never called
+// automatically, never part of getReplenishmentNeeds(). ml_metrics is the
+// model's real last-measured accuracy (train_ml_forecast.py's output),
+// not a hardcoded claim -- report it exactly as returned, including if
+// xgboost_beats_naive is false.
+export interface MlForecastMetrics {
+  trained_at: string;
+  train_rows: number;
+  test_rows: number;
+  naive_mae: number;
+  naive_wmape_pct: number;
+  linear_regression_mae: number;
+  linear_regression_wmape_pct: number;
+  xgboost_mae: number;
+  xgboost_wmape_pct: number;
+  xgboost_beats_naive: boolean;
+}
+
+export interface MlForecastComparison {
+  skuId: string;
+  destinationDC: string;
+  ruleBasedForecast: number;
+  mlForecast: number | null;
+  mlAvailable: boolean;
+  mlUnavailableReason: string | null;
+  metrics: MlForecastMetrics | null;
+}
+
+export async function getMlForecastComparison(skuId: string, destinationDC: string): Promise<MlForecastComparison> {
+  const res = await fetch(
+    `/api/demand-sensing/ml-comparison?${new URLSearchParams({ sku_id: skuId, destination_dc: destinationDC })}`
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : `Failed to fetch ML comparison: ${res.status}`);
+  }
+  return {
+    skuId: data.sku_id,
+    destinationDC: data.destination_dc,
+    ruleBasedForecast: data.rule_based.daily_forecast,
+    mlForecast: data.ml.daily_forecast,
+    mlAvailable: data.ml.available,
+    mlUnavailableReason: data.ml.reason,
+    metrics: data.ml_metrics,
+  };
+}
+
 // One row per supplier, already collapsed from the supplier x SKU catalog
 // server-side by app/api/suppliers/route.ts (best row per supplier_id by
 // suitability_score, plus a `contracts` count computed across all of that

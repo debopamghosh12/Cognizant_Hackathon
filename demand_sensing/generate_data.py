@@ -22,6 +22,7 @@ from config import (
     DISTRIBUTOR_ORDERS_CSV, DISTRIBUTOR_ORDER_INTERVAL_DAYS,
     DISTRIBUTOR_ORDER_BATCH_MULTIPLIER, DISTRIBUTOR_LEAD_DAYS,
     PROMOTIONAL_CALENDAR_CSV,
+    DEMAND_HISTORY_EXTENDED_CSV, EXTENDED_HISTORY_DAYS, EXTENDED_FLU_SEASON_MONTHS,
 )
 
 # Base average units/day per SKU, before per-DC variance -- roughly
@@ -164,7 +165,56 @@ def generate_promotional_calendar() -> None:
     print(f"Wrote {len(rows)} rows to {PROMOTIONAL_CALENDAR_CSV}")
 
 
+def generate_extended() -> None:
+    """Experiment only -- writes data/demand_sensing/demand_history_extended.csv,
+    a separate EXTENDED_HISTORY_DAYS (730-day / 2-year) series, completely
+    independent of generate()'s live 90-day DEMAND_HISTORY_CSV above (that
+    function is untouched, this is a new, additional one). Never read by
+    forecasting.py, replenishment.py, ml_forecast.py, or any live endpoint
+    -- only by the standalone train_ml_forecast_extended.py experiment.
+
+    Unlike the 90-day file's one-time "last N days" spike, the flu season
+    here recurs every year (EXTENDED_FLU_SEASON_MONTHS, Dec-Jan) -- a real,
+    repeating annual pattern rather than a single tail-end window, since a
+    2-year history with only one spike wouldn't actually test whether more
+    *seasonal* signal helps a model learn anything."""
+    end_date = datetime.now(timezone.utc).date()
+    start_date = end_date - timedelta(days=EXTENDED_HISTORY_DAYS - 1)
+
+    rows = []
+    for sku_id in SKUS:
+        base = BASE_DAILY_DEMAND[sku_id]
+        for dc in DESTINATION_DCS:
+            # Distinct seed from generate()'s "{sku_id}|{dc}" -- a
+            # different (not merely longer/identical-prefix) noise
+            # realization, not a trivial extension of the same sequence.
+            rng = random.Random(f"extended|{sku_id}|{dc}")
+            dc_base = base * DC_SIZE_FACTOR[dc]
+            for offset in range(EXTENDED_HISTORY_DAYS):
+                day = start_date + timedelta(days=offset)
+                daily_mean = dc_base
+                if sku_id in SEASONAL_SPIKE_SKUS and day.month in EXTENDED_FLU_SEASON_MONTHS:
+                    daily_mean *= SPIKE_MULTIPLIER
+                units = max(0, round(daily_mean * (1 + rng.uniform(-0.15, 0.15))))
+                rows.append({
+                    "date": day.isoformat(),
+                    "sku_id": sku_id,
+                    "destination_dc": dc,
+                    "units_sold": units,
+                })
+
+    os.makedirs(os.path.dirname(DEMAND_HISTORY_EXTENDED_CSV), exist_ok=True)
+    with open(DEMAND_HISTORY_EXTENDED_CSV, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["date", "sku_id", "destination_dc", "units_sold"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Wrote {len(rows)} rows to {DEMAND_HISTORY_EXTENDED_CSV}")
+
+
 if __name__ == "__main__":
     generate()
     generate_distributor_orders()
     generate_promotional_calendar()
+    # generate_extended() is intentionally NOT called here -- it's a
+    # separate experiment, run explicitly (see train_ml_forecast_extended.py).
