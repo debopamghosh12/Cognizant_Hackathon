@@ -18,10 +18,15 @@ SKUS = {
     "SKU-1010": "N95 Masks (box of 50)",
 }
 
-# Reused verbatim -- these exact strings already appear as real
-# destination_dc values in chatbot/requisitions.db's requisition history,
-# and there is no canonical DC table anywhere in the repo to join against.
-DESTINATION_DCS = ["Pune DC", "Chennai DC", "Siliguri DC"]
+# Pune/Chennai/Siliguri are reused verbatim -- these exact strings already
+# appear as real destination_dc values in chatbot/requisitions.db's
+# requisition history, and there is no canonical DC table anywhere in the
+# repo to join against. Mumbai (metro) and Lucknow (Tier-2) extend the same
+# convention -- a mix of metro and Tier-2 cities, matching the problem
+# statement's framing of MedCare's DC network -- and carry zero downstream
+# constraint the way adding a new SKU would (destination_dc is free text
+# everywhere it's consumed; there's no supplier-coverage dependency).
+DESTINATION_DCS = ["Pune DC", "Chennai DC", "Siliguri DC", "Mumbai DC", "Lucknow DC"]
 
 # SKUs that get a deliberate historical demand spike (the "flu season +60%"
 # scenario from the problem statement) -- Paracetamol (fever) and N95 masks

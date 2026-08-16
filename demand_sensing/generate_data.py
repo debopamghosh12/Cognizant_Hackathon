@@ -38,7 +38,10 @@ BASE_DAILY_DEMAND = {
 
 # Each DC gets a fixed multiplier on the SKU base rate, so DCs aren't
 # identical -- purely for realistic variance, not a real population model.
-DC_SIZE_FACTOR = {"Pune DC": 1.2, "Chennai DC": 1.0, "Siliguri DC": 0.7}
+# Mumbai (largest metro in this set) and Lucknow (Tier-2, smaller than the
+# existing metros but bigger than Siliguri) extend the same spread rather
+# than cloning an existing factor.
+DC_SIZE_FACTOR = {"Pune DC": 1.2, "Chennai DC": 1.0, "Siliguri DC": 0.7, "Mumbai DC": 1.4, "Lucknow DC": 0.85}
 
 
 def generate() -> None:

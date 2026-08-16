@@ -67,6 +67,15 @@ def init_db() -> None:
 # low at Siliguri DC, while Chennai DC holds a near-expiry surplus batch
 # well above its own need -> Transfer recommended. Everything else is
 # comfortably stocked so the alert list stays focused for the demo.
+#
+# Mumbai DC / Lucknow DC rows add a second, independent round of variety
+# once the DC list expanded from 3 to 5 -- deliberately not a copy of the
+# original 3 DCs' pattern: Mumbai gets a new SKU-1003 shortage (a SKU that
+# never alerts anywhere else) instead of reusing SKU-1010/SKU-1001's
+# stories, Lucknow gets a new SKU-1002 shortage. Both DCs' SKU-1010/
+# SKU-1001 batches are deliberately kept far from the near-expiry window
+# (>45 days) so they never become an unplanned transfer donor for the
+# already-verified Pune/Chennai/Siliguri scenarios above.
 # (sku_id, destination_dc, quantity, days_until_expiry)
 _SEED_BATCHES = [
     ("SKU-1001", "Pune DC", 700, 240),
@@ -85,6 +94,16 @@ _SEED_BATCHES = [
     ("SKU-1010", "Pune DC", 60, 300),         # shortage, no viable transfer
     ("SKU-1010", "Chennai DC", 80, 310),      # shortage
     ("SKU-1010", "Siliguri DC", 50, 290),     # shortage
+    ("SKU-1001", "Mumbai DC", 900, 250),
+    ("SKU-1002", "Mumbai DC", 380, 260),
+    ("SKU-1003", "Mumbai DC", 150, 200),      # new shortage -- distinct from the other DCs' stories
+    ("SKU-1007", "Mumbai DC", 500, 270),
+    ("SKU-1010", "Mumbai DC", 480, 300),
+    ("SKU-1001", "Lucknow DC", 750, 220),
+    ("SKU-1002", "Lucknow DC", 95, 240),       # new shortage -- distinct from the other DCs' stories
+    ("SKU-1003", "Lucknow DC", 300, 250),
+    ("SKU-1007", "Lucknow DC", 260, 260),
+    ("SKU-1010", "Lucknow DC", 55, 280),       # shortage, consistent with SKU-1010's pattern elsewhere
 ]
 
 
