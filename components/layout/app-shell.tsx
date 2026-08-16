@@ -3,6 +3,7 @@ import * as React from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SearchProvider } from "@/components/layout/search-context";
+import { NotificationsProvider } from "@/components/layout/notifications-context";
 import { X } from "lucide-react";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -10,6 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SearchProvider>
+      <NotificationsProvider>
       <div className="flex h-screen overflow-hidden bg-background">
         <div className="hidden lg:block">
           <Sidebar />
@@ -34,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      </NotificationsProvider>
     </SearchProvider>
   );
 }
