@@ -1,4 +1,4 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval, ReplenishmentNeed } from "@/lib/data";
 import { getDeliveryRisk, isAtRisk, getReliabilityTrend, type ReliabilityTrend } from "@/lib/anomaly-detection";
 
 interface RawRequisition {
@@ -8,7 +8,7 @@ interface RawRequisition {
   quantity: number;
   destination_dc: string;
   urgency: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  source: "AUTO_P1" | "MANUAL_CHATBOT";
+  source: "AUTO_P1" | "MANUAL_CHATBOT" | "DEMAND_SENSING";
   status: "PENDING" | "VALIDATED" | "FLAGGED" | "REJECTED";
   raw_input: string | null;
   assumed_fields: string;
@@ -25,6 +25,7 @@ const REQUISITION_STATUS_MAP: Record<string, RequisitionStatus> = {
 const REQUESTER_LABEL: Record<string, string> = {
   AUTO_P1: "P1 Auto-Alert",
   MANUAL_CHATBOT: "Chatbot Submission",
+  DEMAND_SENSING: "Demand Sensing Alert",
 };
 
 function transformRequisition(raw: RawRequisition): Requisition {
@@ -52,6 +53,142 @@ export async function getRequisitions(): Promise<Requisition[]> {
   }
   const raw: RawRequisition[] = await res.json();
   return raw.map(transformRequisition);
+}
+
+// Posts to the exact same chatbot /requisitions endpoint the chatbot's own
+// text-parsing flow uses (via app/api/requisitions/route.ts's POST proxy,
+// added alongside its existing GET) -- a Demand Sensing requisition is
+// created through the identical validated insert path, landing PENDING
+// and ready for "Run AI Sourcing" exactly like a chatbot-created one.
+export async function createRequisitionFromNeed(need: ReplenishmentNeed): Promise<Requisition> {
+  const res = await fetch("/api/requisitions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sku_id: need.skuId,
+      quantity: need.recommendedQty,
+      destination_dc: need.destinationDC,
+      urgency: need.urgency.toUpperCase(),
+      source: "DEMAND_SENSING",
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.error === "string" ? data.error : `Failed to create requisition: ${res.status}`);
+  }
+  // The chatbot endpoint returns 200 even on a validation failure (it just
+  // lands the row as FLAGGED instead of PENDING) -- surface that instead of
+  // silently reporting success on a row "Run AI Sourcing" won't pick up.
+  if (Array.isArray(data.validation_errors) && data.validation_errors.length > 0) {
+    throw new Error(`Requisition created but flagged: ${data.validation_errors.join("; ")}`);
+  }
+  return transformRequisition(data.requisition);
+}
+
+interface RawTransferOption {
+  batch_id: string;
+  from_dc: string;
+  quantity: number;
+  days_to_expiry: number;
+  transfer_cost: number;
+  supplier_cost: number;
+}
+
+interface RawReplenishmentNeed {
+  id: string;
+  sku_id: string;
+  sku_name: string;
+  destination_dc: string;
+  current_stock: number;
+  daily_forecast: number;
+  trend: "Rising" | "Stable" | "Falling";
+  confidence: "High" | "Medium" | "Low";
+  reorder_point: number;
+  recommended_qty: number;
+  urgency: "Critical" | "High" | "Medium";
+  reason: string;
+  transfer: RawTransferOption | null;
+  // Optional -- older/simpler backend responses may not include these.
+  distributor_signal?: "Rising" | "Stable" | "Falling" | "No Data";
+  promo_active?: boolean;
+  promo_lift_pct?: number;
+  recommended_reorder_frequency_days?: number;
+  escalated?: boolean;
+  escalation_target?: string | null;
+}
+
+function transformReplenishmentNeed(raw: RawReplenishmentNeed): ReplenishmentNeed {
+  return {
+    id: raw.id,
+    skuId: raw.sku_id,
+    skuName: raw.sku_name,
+    destinationDC: raw.destination_dc,
+    currentStock: raw.current_stock,
+    dailyForecast: raw.daily_forecast,
+    trend: raw.trend,
+    confidence: raw.confidence,
+    reorderPoint: raw.reorder_point,
+    recommendedQty: raw.recommended_qty,
+    urgency: raw.urgency,
+    reason: raw.reason,
+    transfer: raw.transfer && {
+      batchId: raw.transfer.batch_id,
+      fromDC: raw.transfer.from_dc,
+      quantity: raw.transfer.quantity,
+      daysToExpiry: raw.transfer.days_to_expiry,
+      transferCost: raw.transfer.transfer_cost,
+      supplierCost: raw.transfer.supplier_cost,
+    },
+    distributorSignal: raw.distributor_signal,
+    promoActive: raw.promo_active,
+    promoLiftPct: raw.promo_lift_pct,
+    recommendedReorderFrequencyDays: raw.recommended_reorder_frequency_days,
+    escalated: raw.escalated,
+    escalationTarget: raw.escalation_target,
+  };
+}
+
+export async function getReplenishmentNeeds(): Promise<ReplenishmentNeed[]> {
+  const res = await fetch("/api/demand-sensing/replenishment-needs");
+  if (!res.ok) {
+    throw new Error(`Failed to fetch replenishment needs: ${res.status}`);
+  }
+  const raw: RawReplenishmentNeed[] = await res.json();
+  return raw.map(transformReplenishmentNeed);
+}
+
+// Simulated only -- mutates synthetic demand_sensing inventory, never
+// touches requisitions/POs. Returns the updated need for this SKU/DC, or
+// null if the transfer fully covered the shortage.
+export async function initiateTransfer(need: ReplenishmentNeed): Promise<ReplenishmentNeed | null> {
+  if (!need.transfer) {
+    throw new Error("No transfer option available for this need.");
+  }
+  const res = await fetch("/api/demand-sensing/transfer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sku_id: need.skuId,
+      from_dc: need.transfer.fromDC,
+      to_dc: need.destinationDC,
+      quantity: need.transfer.quantity,
+      batch_id: need.transfer.batchId,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Failed to initiate transfer: ${res.status}`);
+  }
+  return data.remaining_need ? transformReplenishmentNeed(data.remaining_need) : null;
+}
+
+// Count of completed Initiate Transfer actions (demand_sensing's
+// transfer_events log) -- for the Analytics "Inter-DC Transfers" KPI.
+export async function getTransferEventCount(): Promise<number | null> {
+  const res = await fetch("/api/demand-sensing/transfer-count");
+  if (!res.ok) return null;
+  const data = await res.json();
+  return typeof data.count === "number" ? data.count : null;
 }
 
 // One row per supplier, already collapsed from the supplier x SKU catalog
@@ -628,6 +765,15 @@ export async function getAtRiskPOCount(): Promise<number> {
   const openPOs = purchaseOrders.filter((po) => OPEN_PO_STATUSES.includes(po.status));
   const suppliers = await Promise.all(openPOs.map(getSupplierForPO));
   return suppliers.filter((s) => s != null && isAtRisk(getDeliveryRisk(s.onTimeDelivery))).length;
+}
+
+// A "completed procurement cycle" = an invoice whose 3-way match actually
+// resolved (Approved either automatically or after manual review) --
+// reuses the same match_status values the Dashboard's match-rate KPI and
+// the Approvals page already key off, no new classification introduced.
+export async function getCompletedCycleCount(): Promise<number> {
+  const matches = await getInvoiceMatches();
+  return matches.filter((m) => m.match_status === "Approved" || m.match_status === "Approved_Manual").length;
 }
 
 // Suppliers page reliability trend warning (lib/anomaly-detection.ts::

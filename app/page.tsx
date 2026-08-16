@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
-import { FileClock, Bot, ScanText, GitCompareArrows, Zap, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { FileClock, Bot, ScanText, GitCompareArrows, Zap, AlertTriangle, Radar } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -26,7 +27,7 @@ import {
   recentActivity,
   touchlessTrend,
 } from "@/lib/data";
-import { getRequisitions, getPurchaseOrders, getInvoiceMatches, getInvoices, getAutomationRate, getAtRiskPOCount } from "@/lib/api";
+import { getRequisitions, getPurchaseOrders, getInvoiceMatches, getInvoices, getAutomationRate, getAtRiskPOCount, getReplenishmentNeeds } from "@/lib/api";
 
 export default function DashboardPage() {
   const [totalRequisitions, setTotalRequisitions] = React.useState<number | null>(null);
@@ -36,10 +37,12 @@ export default function DashboardPage() {
   const [ocrSuccessRate, setOcrSuccessRate] = React.useState<number | null | undefined>(undefined);
   const [automationRate, setAutomationRate] = React.useState<number | null | undefined>(undefined);
   const [atRiskPOs, setAtRiskPOs] = React.useState<number | null>(null);
+  const [replenishmentAlerts, setReplenishmentAlerts] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     getRequisitions().then((r) => setTotalRequisitions(r.length));
     getPurchaseOrders().then((p) => setTotalPOs(p.length));
+    getReplenishmentNeeds().then((n) => setReplenishmentAlerts(n.length));
     getInvoiceMatches().then((matches) => {
       const approved = matches.filter((m) => m.match_status === "Approved").length;
       const flagged = matches.filter((m) => m.match_status === "Flagged_For_Review").length;
@@ -65,7 +68,7 @@ export default function DashboardPage() {
         description="Real-time visibility into your autonomous procure-to-pay pipeline"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCard
           label="Total Requisitions"
           value={totalRequisitions === null ? "…" : totalRequisitions.toString()}
@@ -97,6 +100,15 @@ export default function DashboardPage() {
           accent="bg-red-50 text-red-600 dark:bg-red-500/10"
           note="Predictive — Medium/High delivery risk"
         />
+        <Link href="/demand-sensing">
+          <KpiCard
+            label="Replenishment Alerts"
+            value={replenishmentAlerts === null ? "…" : replenishmentAlerts.toString()}
+            icon={Radar}
+            accent="bg-orange-50 text-orange-600 dark:bg-orange-500/10"
+            note="Demand Sensing — click to review"
+          />
+        </Link>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">

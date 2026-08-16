@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
-import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle, Radio, ScanLine } from "lucide-react";
+import Link from "next/link";
+import { Truck, Warehouse, PackageCheck, CheckCircle2, AlertTriangle, Radio, ScanLine, ScanText } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -142,6 +143,14 @@ function DeliveryCard({ delivery, onReceived }: { delivery: Delivery; onReceived
           <PackageCheck size={15} />
           {isOverDelivered ? "Over-Delivered" : isFullyReceived ? "Fully Received" : isScanning ? "Scanning..." : isReceiving ? "Recording..." : "Record Delivery"}
         </Button>
+
+        {isComplete && (
+          <Button className="w-full" variant="outline" asChild>
+            <Link href="/invoices">
+              <ScanText size={15} /> Continue to Invoice Processing
+            </Link>
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

@@ -31,7 +31,43 @@ export interface Requisition {
   status: RequisitionStatus;
   createdDate: string;
   estimatedCost: number;
-  source: "AUTO_P1" | "MANUAL_CHATBOT";
+  source: "AUTO_P1" | "MANUAL_CHATBOT" | "DEMAND_SENSING";
+}
+
+export type ReplenishmentUrgency = "Critical" | "High" | "Medium";
+
+export interface TransferOption {
+  batchId: string;
+  fromDC: string;
+  quantity: number;
+  daysToExpiry: number;
+  transferCost: number;
+  supplierCost: number;
+}
+
+export interface ReplenishmentNeed {
+  id: string;
+  skuId: string;
+  skuName: string;
+  destinationDC: string;
+  currentStock: number;
+  dailyForecast: number;
+  trend: "Rising" | "Stable" | "Falling";
+  confidence: "High" | "Medium" | "Low";
+  reorderPoint: number;
+  recommendedQty: number;
+  urgency: ReplenishmentUrgency;
+  reason: string;
+  transfer: TransferOption | null;
+  // Optional -- populated by the backend's later Features 1-5, but
+  // typed as optional here so nothing breaks if any of them is ever
+  // missing/undefined in a given response.
+  distributorSignal?: "Rising" | "Stable" | "Falling" | "No Data";
+  promoActive?: boolean;
+  promoLiftPct?: number;
+  recommendedReorderFrequencyDays?: number;
+  escalated?: boolean;
+  escalationTarget?: string | null;
 }
 
 // `requisitions` used to be a static mock array here. It's now fetched live

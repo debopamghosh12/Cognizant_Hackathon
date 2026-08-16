@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
-import { Download, Send, FileText, Bot } from "lucide-react";
+import Link from "next/link";
+import { Download, Send, FileText, Bot, PackageCheck } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -565,6 +566,14 @@ export default function PurchaseOrdersPage() {
                 <Send size={15} /> {selected.status !== "Draft" ? "Sent" : isSending ? "Sending..." : "Send to Supplier"}
               </Button>
             </div>
+
+            {selected.status !== "Draft" && (
+              <Button className="mt-2 w-full" variant="outline" asChild>
+                <Link href="/goods-receipt">
+                  <PackageCheck size={15} /> Continue to Goods Receipt
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
         )}

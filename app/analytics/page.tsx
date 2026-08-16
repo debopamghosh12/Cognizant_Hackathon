@@ -18,13 +18,21 @@ import { PageHeader } from "@/components/shared/page-header";
 import { ChartCard } from "@/components/shared/chart-card";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { Badge } from "@/components/ui/badge";
-import { Zap, Clock, ScanText, ShoppingCart } from "lucide-react";
+import { Zap, Clock, ScanText, ShoppingCart, CheckCircle2, ArrowLeftRight } from "lucide-react";
 import {
   cycleTimeTrend,
   touchlessTrend,
   monthlyPOVolume,
 } from "@/lib/data";
-import { getAutomationRate, getAvgCycleTime, getPurchaseOrders, getSpendBySupplier, type SupplierSpend } from "@/lib/api";
+import {
+  getAutomationRate,
+  getAvgCycleTime,
+  getPurchaseOrders,
+  getSpendBySupplier,
+  getCompletedCycleCount,
+  getTransferEventCount,
+  type SupplierSpend,
+} from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 
 const tooltipStyle = {
@@ -49,12 +57,16 @@ export default function AnalyticsPage() {
   const [avgCycleTime, setAvgCycleTime] = React.useState<number | null | undefined>(undefined);
   const [totalPOs, setTotalPOs] = React.useState<number | null>(null);
   const [spendBySupplier, setSpendBySupplier] = React.useState<SupplierSpend[]>([]);
+  const [completedCycles, setCompletedCycles] = React.useState<number | null>(null);
+  const [transferEvents, setTransferEvents] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     getAutomationRate().then(setAutomationRate);
     getAvgCycleTime().then(setAvgCycleTime);
     getPurchaseOrders().then((pos) => setTotalPOs(pos.length));
     getSpendBySupplier().then(setSpendBySupplier);
+    getCompletedCycleCount().then(setCompletedCycles);
+    getTransferEventCount().then(setTransferEvents);
   }, []);
 
   return (
@@ -64,7 +76,7 @@ export default function AnalyticsPage() {
         description="Procurement performance, cycle times and automation impact"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCard
           label="Automation Rate"
           value={automationRate === undefined ? "…" : automationRate === null ? "—" : `${automationRate}%`}
@@ -89,6 +101,20 @@ export default function AnalyticsPage() {
           value={totalPOs === null ? "…" : totalPOs.toString()}
           icon={ShoppingCart}
           accent="bg-amber-50 text-amber-600 dark:bg-amber-500/10"
+        />
+        <KpiCard
+          label="Completed Procurement Cycles"
+          value={completedCycles === null ? "…" : completedCycles.toString()}
+          icon={CheckCircle2}
+          accent="bg-green-50 text-green-600 dark:bg-green-500/10"
+          note="Invoices matched through to Approved"
+        />
+        <KpiCard
+          label="Inter-DC Transfers"
+          value={transferEvents === null ? "…" : transferEvents.toString()}
+          icon={ArrowLeftRight}
+          accent="bg-orange-50 text-orange-600 dark:bg-orange-500/10"
+          note="Demand Sensing — completed transfers"
         />
       </div>
 
