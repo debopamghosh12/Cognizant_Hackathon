@@ -59,7 +59,7 @@ class GoodsReceiptResponse(BaseModel):
 
 
 class InvoiceDecisionRequest(BaseModel):
-    action: Literal["approve", "reject", "escalate"]
+    action: Literal["approve", "reject", "escalate", "approve_for_payment"]
 
 
 class OCRInvoiceRequest(BaseModel):

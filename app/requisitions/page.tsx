@@ -59,9 +59,9 @@ function RequisitionsPageContent() {
     setIsSourcing(true);
     setSourcingResult(null);
     try {
-      const bestSupplier = await findBestSupplier(selected.sku);
+      const bestSupplier = await findBestSupplier(selected.sku, selected.quantity);
       if (!bestSupplier) {
-        setSourcingResult(`No suppliers available for ${selected.sku}.`);
+        setSourcingResult(`No qualifying suppliers available for ${selected.sku} at quantity ${selected.quantity.toLocaleString()}.`);
         return;
       }
       await generatePO(selected, bestSupplier);

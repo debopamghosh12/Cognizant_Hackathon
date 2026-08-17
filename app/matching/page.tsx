@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send, Loader2, ChevronDown } from "lucide-react";
+import { CheckCircle2, XCircle, ShoppingCart, PackageCheck, Receipt, Wand2, Send, Loader2, ChevronDown, Banknote } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,18 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
-import { getInvoiceMatches, type InvoiceMatch } from "@/lib/api";
+import { PaymentApprovedDialog } from "@/components/shared/payment-approved-dialog";
+import { cn, formatCurrency } from "@/lib/utils";
+import { getInvoiceMatches, getPurchaseOrders, getInvoices, approveInvoiceForPayment, type InvoiceMatch } from "@/lib/api";
+import type { PurchaseOrder, InvoiceRecord, PaymentConfirmation } from "@/lib/data";
 import { StatusBadge } from "@/components/shared/status-badge";
+
+// Auto-approve threshold -- same 90% cutoff the "Auto-Approvable" badge
+// below already uses, reused here so "Approve for Payment" only ever
+// unlocks for a match that badge itself calls auto-approvable. The
+// PATCH /invoices/{id}/decision endpoint re-checks this server-side too
+// (see po_generation/main.py), so this is a UX gate, not the only guard.
+const AUTO_APPROVE_THRESHOLD = 90;
 
 const EXTRACTION_STATUS_LABEL: Record<string, string> = {
   Failed: "OCR extraction failed completely for this invoice.",
@@ -41,11 +50,19 @@ function MatchingPageContent() {
   // matches[0] -- previously this page always defaulted to an arbitrary
   // invoice with no way to pick a specific one.
   const [selectedInvoiceId, setSelectedInvoiceId] = React.useState<string | null>(null);
+  const [purchaseOrders, setPurchaseOrders] = React.useState<PurchaseOrder[]>([]);
+  const [invoices, setInvoices] = React.useState<InvoiceRecord[]>([]);
+  const [isApproving, setIsApproving] = React.useState(false);
+  const [approveError, setApproveError] = React.useState<string | null>(null);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = React.useState(false);
+  const [paymentInfo, setPaymentInfo] = React.useState<PaymentConfirmation | null>(null);
 
   const loadMatches = React.useCallback(() => getInvoiceMatches().then(setMatches), []);
 
   React.useEffect(() => {
-    loadMatches().finally(() => setIsLoading(false));
+    Promise.all([loadMatches(), getPurchaseOrders().then(setPurchaseOrders), getInvoices().then(setInvoices)]).finally(() =>
+      setIsLoading(false)
+    );
   }, [loadMatches]);
 
   React.useEffect(() => {
@@ -66,6 +83,37 @@ function MatchingPageContent() {
   const selected = (selectedInvoiceId && matches.find((m) => m.invoice_id === selectedInvoiceId)) || matches[0] || null;
   const rows = selected?.rows ?? [];
   const matchScore = rows.length > 0 ? Math.round((rows.filter((r) => r.match).length / rows.length) * 100) : 0;
+  const isAlreadyApprovedForPayment = selected?.match_status === "Approved_For_Payment";
+
+  // Real numbers only: amount comes from the actual invoice record (falls
+  // back to the PO's total if the invoice lookup somehow misses), payment
+  // terms from the supplier's real negotiated payment_terms_days -- same
+  // field/fallback the PO PDF's Payment Date line already uses -- never a
+  // fabricated placeholder.
+  async function handleApproveForPayment() {
+    if (!selected || matchScore < AUTO_APPROVE_THRESHOLD || isAlreadyApprovedForPayment) return;
+    const po = purchaseOrders.find((p) => p.id === selected.po_id) ?? null;
+    const invoiceRecord = invoices.find((i) => i.id === selected.invoice_id) ?? null;
+
+    if (!po) return;
+
+    setIsApproving(true);
+    setApproveError(null);
+    try {
+      const confirmation = await approveInvoiceForPayment(
+        selected.invoice_id,
+        po,
+        invoiceRecord?.amount ?? po.amount
+      );
+      await loadMatches();
+      setPaymentInfo(confirmation);
+      setIsPaymentDialogOpen(true);
+    } catch (e) {
+      setApproveError(e instanceof Error ? e.message : "Failed to approve for payment");
+    } finally {
+      setIsApproving(false);
+    }
+  }
 
   const emptyReason = selected
     ? EXTRACTION_STATUS_LABEL[selected.extraction_status] ??
@@ -103,9 +151,35 @@ function MatchingPageContent() {
               {isRefreshing ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
               {isRefreshing ? "Matching..." : "Auto Match"}
             </Button>
+            {isAlreadyApprovedForPayment ? (
+              <Badge variant="success" className="h-8 px-3 text-xs">
+                <CheckCircle2 size={13} /> Approved for Payment
+              </Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="success"
+                onClick={handleApproveForPayment}
+                disabled={!selected || matchScore < AUTO_APPROVE_THRESHOLD || isApproving}
+                title={
+                  selected && matchScore < AUTO_APPROVE_THRESHOLD
+                    ? "Match must be Auto-Approvable before payment can be approved"
+                    : undefined
+                }
+              >
+                {isApproving ? <Loader2 size={15} className="animate-spin" /> : <Banknote size={15} />}
+                {isApproving ? "Approving..." : "Approve for Payment"}
+              </Button>
+            )}
           </>
         }
       />
+
+      {approveError && (
+        <Card className="mb-4 border-red-200 dark:border-red-900">
+          <CardContent className="p-3 text-sm text-red-600">{approveError}</CardContent>
+        </Card>
+      )}
 
       <Card className="mb-4">
         <CardContent className="flex flex-col items-center gap-4 p-5 sm:flex-row sm:justify-between">
@@ -226,6 +300,8 @@ function MatchingPageContent() {
         </Card>
       </div>
       )}
+
+      <PaymentApprovedDialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen} paymentInfo={paymentInfo} />
     </div>
   );
 }

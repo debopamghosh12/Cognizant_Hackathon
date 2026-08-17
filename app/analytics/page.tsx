@@ -125,7 +125,11 @@ export default function AnalyticsPage() {
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                 <XAxis type="number" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
                 <YAxis dataKey="supplier" type="category" width={100} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatCurrency(v)} />
+              {/* Aggregate (summed spend per supplier across many POs), not a
+                  single line-item amount -- a rounded headline number is the
+                  right call here, unlike the per-PO/per-invoice amounts
+                  elsewhere in the app. */}
+              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatCurrency(v, "INR", 0)} />
               <Bar dataKey="spend" fill="#2563eb" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>

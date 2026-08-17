@@ -115,10 +115,36 @@ def invoice_decision_endpoint(invoice_id: str, body: InvoiceDecisionRequest):
     if invoice is None:
         raise HTTPException(status_code=404, detail=f"invoice '{invoice_id}' not found")
 
+    # Server-side guard, not just a disabled frontend button -- but "clean
+    # match" is no longer required here: this action now covers two
+    # legitimate callers. The 3-Way Matching page's "Approve for Payment"
+    # button (gated >=90% match client-side) is the fast, no-judgment-call
+    # path. The Approvals page's "Approve" button is the opposite case by
+    # definition -- it only ever appears on a Flagged_For_Review invoice,
+    # i.e. one that does NOT cleanly match, reviewed and approved anyway by
+    # a human who saw the actual discrepancy (see build_match_rows()'s
+    # numbers surfaced in that page's detail view). What both still can't
+    # do is approve payment against an invoice with no real comparison at
+    # all (no GR, or an Incomplete/Failed extraction) -- that's the one
+    # case this guard still blocks, recomputed fresh here so it can't be
+    # bypassed by calling the endpoint directly with fabricated data.
+    if body.action == "approve_for_payment":
+        po = database.get_purchase_order(invoice["po_id"])
+        gr = database.get_goods_receipt(invoice["gr_id"]) if invoice.get("gr_id") else None
+        if gr is None:
+            gr = database.get_goods_receipt_by_po(invoice["po_id"])
+        rows = build_match_rows(invoice, po, gr) if po else []
+        if not rows:
+            raise HTTPException(
+                status_code=400,
+                detail=f"invoice '{invoice_id}' has no 3-way match comparison to approve payment against",
+            )
+
     decision_map = {
         "approve": ("Approved_Manual", None),
         "reject": ("Rejected", "Cancelled"),
         "escalate": ("Escalated", None),
+        "approve_for_payment": ("Approved_For_Payment", "Approved for Payment"),
     }
     match_status, po_status = decision_map[body.action]
     return database.update_invoice_decision(invoice_id, match_status, po_status)

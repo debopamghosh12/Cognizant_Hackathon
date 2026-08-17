@@ -8,7 +8,7 @@ export type RequisitionStatus =
   | "AUTO_APPROVED"
   | "REJECTED"
   | "CONVERTED_TO_PO";
-export type POStatus = "Draft" | "Sent" | "Acknowledged" | "Partially Received" | "Completed" | "Cancelled";
+export type POStatus = "Draft" | "Sent" | "Acknowledged" | "Partially Received" | "Approved for Payment" | "Completed" | "Cancelled";
 
 export interface MatchRow {
   label: string;
@@ -16,6 +16,12 @@ export interface MatchRow {
   gr: string;
   invoice: string;
   match: boolean;
+  // Real numbers behind the check, from the same within_tolerance() call
+  // that decided `match` (po_generation/generator.py::build_match_rows) --
+  // not re-derived client-side, so a UI can state the actual rule/margin
+  // without risking drift from what actually decided pass/fail.
+  variancePercent?: number | null;
+  tolerancePercent?: number;
 }
 
 export interface Requisition {
@@ -151,7 +157,8 @@ export type InvoiceStatus =
   | "Flagged"
   | "Manually Approved"
   | "Rejected"
-  | "Escalated";
+  | "Escalated"
+  | "Approved for Payment";
 
 export interface InvoiceRecord {
   id: string;
@@ -175,10 +182,30 @@ export interface InvoiceRecord {
 export interface Approval {
   id: string;
   invoiceId: string;
+  poId: string;
+  grId: string | null;
   supplier: string;
   amount: number;
   confidence: number;
   reasoning: string;
+  // Same per-check rows the 3-Way Matching page shows (real PO/GR/Invoice
+  // numbers, pass/fail, variance/tolerance) -- carried through so the
+  // Approvals card's detail view can show its work instead of just this
+  // card's single summary sentence.
+  rows: MatchRow[];
+}
+
+// Populated by lib/api.ts::approveInvoiceForPayment() -- shared by the
+// 3-Way Matching page's "Approve for Payment" button and the Approvals
+// page's "Approve" button, so both render the identical confirmation
+// (components/shared/payment-approved-dialog.tsx) for the same underlying
+// Approved_For_Payment status change.
+export interface PaymentConfirmation {
+  poId: string;
+  invoiceId: string;
+  amount: number;
+  paymentReference: string;
+  paymentTermsDays: number | null;
 }
 
 // `approvals` used to be a static mock array here. It's now fetched live

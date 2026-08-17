@@ -1,5 +1,6 @@
-import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval, ReplenishmentNeed } from "@/lib/data";
+import type { Requisition, RequisitionStatus, Supplier, PurchaseOrder, POStatus, MatchRow, Delivery, DeliveryStatus, InvoiceRecord, InvoiceStatus, Approval, ReplenishmentNeed, PaymentConfirmation } from "@/lib/data";
 import { getDeliveryRisk, isAtRisk, getReliabilityTrend, type ReliabilityTrend } from "@/lib/anomaly-detection";
+import { scoreSuppliers, bestQualifiedSupplier, type SupplierScore } from "@/lib/supplier-scoring";
 
 interface RawRequisition {
   id: number;
@@ -324,12 +325,26 @@ export async function getSuppliersForSku(skuId: string): Promise<Supplier[]> {
 }
 
 // "Run AI Sourcing" (app/requisitions/page.tsx): best candidate for a
-// requisition's SKU, already ranked by suitability_score server-side --
-// this just takes the top one, or null if the SKU has no supplier coverage
-// (a real, known gap for 6 of the chatbot's 10 seeded SKUs).
-export async function findBestSupplier(skuId: string): Promise<Supplier | null> {
+// requisition's SKU, scored live for this specific order quantity via
+// lib/supplier-scoring.ts (price/lead-time/on-time-delivery/quality,
+// weighted, with the same MOQ/capacity/GMP/defect-rate hard filters
+// generate_po() enforces applied up front) -- returns null if the SKU has
+// no supplier coverage at all, or no candidate clears those hard filters
+// for this quantity.
+export async function findBestSupplier(skuId: string, quantity: number): Promise<Supplier | null> {
   const candidates = await getSuppliersForSku(skuId);
-  return candidates[0] ?? null;
+  return bestQualifiedSupplier(candidates, quantity);
+}
+
+// "Why this supplier?" (app/purchase-orders/page.tsx): the same live
+// scoring findBestSupplier() used to pick a supplier, returned in full so
+// the UI can show the winning supplier's breakdown plus 1-2 runner-ups for
+// contrast. Deliberately the exact same scoreSuppliers() call as
+// findBestSupplier() -- never a separately-maintained "explanation" that
+// could drift from what actually decided the pick.
+export async function getSupplierSelectionBreakdown(skuId: string, quantity: number): Promise<SupplierScore[]> {
+  const candidates = await getSuppliersForSku(skuId);
+  return scoreSuppliers(candidates, quantity);
 }
 
 // Predictive Delivery Risk needs the exact supplier-SKU row a PO was
@@ -436,6 +451,7 @@ const PO_STATUS_MAP: Record<string, POStatus> = {
   // raw status, not just genuinely unexpected ones.
   Cancelled: "Cancelled",
   Completed: "Completed",
+  "Approved for Payment": "Approved for Payment",
 };
 
 function computeExpectedDate(createdAt: string, leadTimeDays: number): Date {
@@ -603,7 +619,7 @@ interface RawInvoice {
   price_per_unit: number | null;
   total_amount: number | null;
   extraction_status: "Failed" | "Incomplete" | "Extracted";
-  match_status: "Flagged_For_Review" | "Approved" | "Approved_Manual" | "Rejected" | "Escalated" | "Awaiting_Goods_Receipt" | null;
+  match_status: "Flagged_For_Review" | "Approved" | "Approved_Manual" | "Rejected" | "Escalated" | "Approved_For_Payment" | "Awaiting_Goods_Receipt" | null;
   printable_path: string | null;
   // No response_model on GET /invoices, so this arrives as raw SQLite 0/1
   // (not a real boolean) -- coerce with Boolean(...) in transformInvoice.
@@ -618,6 +634,7 @@ function deriveInvoiceStatus(raw: RawInvoice): InvoiceStatus {
   if (raw.match_status === "Rejected") return "Rejected";
   if (raw.match_status === "Escalated") return "Escalated";
   if (raw.match_status === "Flagged_For_Review") return "Flagged";
+  if (raw.match_status === "Approved_For_Payment") return "Approved for Payment";
   return "Awaiting Delivery"; // Awaiting_Goods_Receipt
 }
 
@@ -729,25 +746,60 @@ export async function getApprovals(): Promise<Approval[]> {
       return {
         id: m.invoice_id,
         invoiceId: m.invoice_id,
+        poId: m.po_id,
+        grId: m.gr_id,
         supplier: invoice?.supplier ?? "—",
         amount: invoice?.amount ?? 0,
         confidence,
         reasoning: failedLabels.length > 0
           ? `${failedLabels.join(", ")} outside the 2% match tolerance.`
           : "Flagged for review.",
+        rows: m.rows,
       };
     });
 }
 
-export async function postApprovalDecision(invoiceId: string, action: "approve" | "reject" | "escalate"): Promise<void> {
+export async function postApprovalDecision(
+  invoiceId: string,
+  action: "approve" | "reject" | "escalate" | "approve_for_payment"
+): Promise<void> {
   const res = await fetch(`/api/invoices/${invoiceId}/decision`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to record decision for ${invoiceId}: ${res.status}`);
+    // approve_for_payment's 400 (no real 3-way comparison to approve
+    // against) is a real server-side guard a caller needs to see, not
+    // just a generic failure -- surfaced the same way generatePO() does
+    // for its own hard-filter rejections.
+    const data = await res.json().catch(() => null);
+    throw new Error(
+      typeof data?.detail === "string" ? data.detail : `Failed to record decision for ${invoiceId}: ${res.status}`
+    );
   }
+}
+
+// Shared by the 3-Way Matching page's "Approve for Payment" button (a
+// clean auto-match) and the Approvals page's "Approve" button (a human
+// reviewing a flagged invoice and deciding to approve it anyway) -- same
+// action, same resulting Approved_For_Payment status either way, so both
+// pages can render the identical PaymentApprovedDialog off this one call
+// instead of each assembling its own confirmation data.
+export async function approveInvoiceForPayment(
+  invoiceId: string,
+  po: PurchaseOrder,
+  amount: number
+): Promise<PaymentConfirmation> {
+  await postApprovalDecision(invoiceId, "approve_for_payment");
+  const supplier = await getSupplierForPO(po);
+  return {
+    poId: po.id,
+    invoiceId,
+    amount,
+    paymentReference: `PAY-${Math.random().toString(16).slice(2, 10).toUpperCase()}`,
+    paymentTermsDays: supplier?.paymentTermsDays ?? null,
+  };
 }
 
 // Shared by Dashboard and Analytics (previously two independent hardcoded

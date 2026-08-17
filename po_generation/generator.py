@@ -1,5 +1,4 @@
 import os
-import random
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -9,6 +8,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from validate import within_tolerance, three_way_match  # src/validate.py — reused so this stays consistent
+from config import MATCH_TOLERANCE_PERCENT
 
 GMP_REQUIRED_CATEGORIES = {"Active Ingredient", "Excipient"}
 MAX_DEFECT_RATE_PCT = 0.05
@@ -89,37 +89,28 @@ def generate_po(requisition: dict, supplier: dict) -> dict:
 # function here. po_generation/main.py calls it directly.
 
 
-INVOICE_LARGE_VARIANCE_RATE = 0.25  # fraction of invoices that get a tolerance-breaking variance
-INVOICE_SMALL_VARIANCE_RANGE = (0.0, 0.015)   # comfortably inside MATCH_TOLERANCE_PERCENT (2%)
-INVOICE_LARGE_VARIANCE_RANGE = (0.05, 0.15)   # e.g. a real freight surcharge or short-ship dispute
-
-
-def _jittered(value: float, variance_range: tuple[float, float]) -> float:
-    pct = random.uniform(*variance_range)
-    sign = random.choice([-1, 1])
-    return round(value * (1 + sign * pct), 2)
-
-
 def generate_synthetic_invoice(po: dict, gr: dict) -> dict:
     """
-    Builds an invoice's numbers FROM the PO's and GR's own real values, with
-    a small controlled variance, instead of from OCR run against unrelated
-    sample images (which is how invoice amounts previously ended up in a
-    completely different numeric universe than their PO, e.g. 500,000 vs
-    600). 75% of invoices stay inside MATCH_TOLERANCE_PERCENT so they land
-    "Approved"; 25% get a larger jitter so they land "Flagged_For_Review" --
-    same reused three_way_match() the Matching page already relies on, so
-    match_status here can never drift from what that page displays.
-    """
-    variance_range = (
-        INVOICE_LARGE_VARIANCE_RANGE if random.random() < INVOICE_LARGE_VARIANCE_RATE
-        else INVOICE_SMALL_VARIANCE_RANGE
-    )
+    Builds an invoice's numbers directly FROM the PO's and GR's own real
+    values -- no variance, every field an exact echo of the record it came
+    from. (Previously applied a small deliberate jitter, sized to land most
+    invoices inside MATCH_TOLERANCE_PERCENT and a fraction outside it, as a
+    demo of the tolerance/review logic -- removed by explicit request in
+    favor of clean, unambiguous 3-way matches with no unexplained variance.
+    A demo of the tolerance logic, if wanted later, should be one
+    deliberately-flagged example, not baked into every synthetic invoice.)
 
-    quantity_ordered = _jittered(po["quantity_ordered"], variance_range)
-    quantity_received = _jittered(gr["quantity_received"], variance_range)
-    expected_total = po["price_per_unit"] * quantity_received
-    total_amount = _jittered(expected_total, variance_range)
+    total_amount is price_per_unit x quantity_received (what was actually
+    delivered), not po["total_budget"] (price x quantity ORDERED) -- these
+    only differ when a GR's received quantity doesn't match the PO's
+    ordered quantity (a partial or over-delivery), and using the received
+    quantity keeps this exactly equal to what three_way_match()'s own
+    reconciliation check compares against, so the match is trivially exact
+    in every case, not just the common one.
+    """
+    quantity_ordered = po["quantity_ordered"]
+    quantity_received = gr["quantity_received"]
+    total_amount = round(po["price_per_unit"] * quantity_received, 2)
 
     extracted_data = {
         "quantity_ordered": quantity_ordered,
@@ -178,6 +169,16 @@ def build_invoice_from_ocr(po: dict, gr: dict, confirmed: dict) -> dict:
     }
 
 
+def _variance_pct(baseline: float, other: float) -> float | None:
+    """Same formula within_tolerance() (src/validate.py) uses internally to
+    decide pass/fail -- exposed here too so a UI can show the real percent
+    that drove the decision instead of re-deriving (and risking drifting
+    from) it separately."""
+    if baseline == 0:
+        return None if other == 0 else float("inf")
+    return round(abs(baseline - other) / baseline * 100, 2)
+
+
 def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
     """
     Recomputes the same 3 checks three_way_match() (src/validate.py)
@@ -192,6 +193,12 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
     match was ever attempted, so returning a partial (Quantity Ordered /
     Total Amount) comparison here would misleadingly imply one was, with
     a fabricated match score. Return no rows in that case.
+
+    Each row also carries variancePercent/tolerancePercent (numeric, not
+    just the display strings) -- added for the Approvals page's expandable
+    detail view, so it can state the actual rule and margin ("X% variance,
+    outside the 2% tolerance") with real numbers instead of the generic
+    sentence it previously showed.
     """
     if gr is None:
         return []
@@ -207,6 +214,8 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
             "gr": "—",
             "invoice": f"{inv_qty:g} units",
             "match": within_tolerance(po_qty, inv_qty),
+            "variancePercent": _variance_pct(po_qty, inv_qty),
+            "tolerancePercent": MATCH_TOLERANCE_PERCENT,
         })
 
     if gr is not None and invoice.get("quantity_received") is not None:
@@ -218,6 +227,8 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
             "gr": f"{gr_qty:g} units",
             "invoice": f"{inv_qty:g} units",
             "match": within_tolerance(gr_qty, inv_qty),
+            "variancePercent": _variance_pct(gr_qty, inv_qty),
+            "tolerancePercent": MATCH_TOLERANCE_PERCENT,
         })
 
     if invoice.get("quantity_received") is not None and invoice.get("total_amount") is not None:
@@ -225,23 +236,33 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
         inv_total = invoice["total_amount"]
         rows.append({
             "label": "Total Amount Reconciliation",
-            "po": f"${expected_total:.2f}",
+            "po": f"₹{expected_total:.2f}",
             "gr": "—",
-            "invoice": f"${inv_total:.2f}",
+            "invoice": f"₹{inv_total:.2f}",
             "match": within_tolerance(expected_total, inv_total),
+            "variancePercent": _variance_pct(expected_total, inv_total),
+            "tolerancePercent": MATCH_TOLERANCE_PERCENT,
         })
 
     # Mirrors three_way_match()'s 4th check (src/validate.py) -- a strict
     # excess comparison, not within_tolerance(), so it never flags a normal
-    # in-progress partial delivery.
+    # in-progress partial delivery. variancePercent is signed here (positive
+    # = over-delivery amount); tolerancePercent is 0 since ANY overage fails
+    # this check, unlike the 2%-band checks above.
     po_qty_ordered = po["quantity_ordered"]
     gr_qty_received = gr["quantity_received"]
+    over_pct = (
+        round((gr_qty_received - po_qty_ordered) / po_qty_ordered * 100, 2)
+        if po_qty_ordered else None
+    )
     rows.append({
         "label": "Goods Receipt vs PO Quantity",
         "po": f"{po_qty_ordered:g} units",
         "gr": f"{gr_qty_received:g} units",
         "invoice": "—",
         "match": gr_qty_received <= po_qty_ordered,
+        "variancePercent": over_pct,
+        "tolerancePercent": 0,
     })
 
     return rows

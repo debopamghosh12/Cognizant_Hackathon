@@ -42,6 +42,17 @@ def compute_invoice_anomaly(invoice: dict, supplier_id: str) -> dict:
     that already existed for this supplier before `invoice` -- call this
     before persisting `invoice` itself."""
     prior_invoices = database.list_invoices_by_supplier(supplier_id)
+    # Incomplete/Failed-extraction invoices (e.g. src/main.py's legacy OCR
+    # pipeline, or a deliberately-incomplete demo row) have no real
+    # price_per_unit/quantity_received/total_amount -- nothing to compute a
+    # variance from, so they're excluded from history rather than crashing
+    # on None * None.
+    prior_invoices = [
+        inv for inv in prior_invoices
+        if inv.get("price_per_unit") is not None
+        and inv.get("quantity_received") is not None
+        and inv.get("total_amount") is not None
+    ]
 
     if not prior_invoices:
         return {

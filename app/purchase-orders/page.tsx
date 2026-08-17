@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { Download, Send, FileText, Bot, PackageCheck } from "lucide-react";
+import { Download, Send, FileText, Bot, PackageCheck, Scale } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import type { PurchaseOrder, Supplier, Requisition } from "@/lib/data";
-import { getPurchaseOrders, sendPurchaseOrder, getSupplierForPO, getRequisitions } from "@/lib/api";
+import { getPurchaseOrders, sendPurchaseOrder, getSupplierForPO, getRequisitions, getSupplierSelectionBreakdown } from "@/lib/api";
+import type { SupplierScore } from "@/lib/supplier-scoring";
 import { getDeliveryRisk, type DeliveryRiskLevel } from "@/lib/anomaly-detection";
 import { formatCurrency } from "@/lib/utils";
 import { useGlobalSearch } from "@/components/layout/search-context";
@@ -30,9 +31,19 @@ const STAMP_COLOR: Record<string, string> = {
   Sent: "#2563eb",
   Acknowledged: "#2563eb",
   "Partially Received": "#d97706",
+  "Approved for Payment": "#16a34a",
   Completed: "#16a34a",
   Cancelled: "#dc2626",
 };
+
+function ScoreRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-foreground">{(value * 100).toFixed(0)}/100</span>
+    </div>
+  );
+}
 
 export default function PurchaseOrdersPage() {
   const { query } = useGlobalSearch();
@@ -41,6 +52,10 @@ export default function PurchaseOrdersPage() {
   const [selected, setSelected] = React.useState<PurchaseOrder | null>(null);
   const [isSending, setIsSending] = React.useState(false);
   const [selectedSupplier, setSelectedSupplier] = React.useState<Supplier | null | undefined>(undefined);
+  const [supplierBreakdown, setSupplierBreakdown] = React.useState<SupplierScore[] | null>(null);
+  const [isBreakdownOpen, setIsBreakdownOpen] = React.useState(false);
+  const [isLoadingBreakdown, setIsLoadingBreakdown] = React.useState(false);
+  const [breakdownError, setBreakdownError] = React.useState<string | null>(null);
   // requisitionId -> real item name (e.g. "Amoxicillin 250mg"), sourced
   // from chatbot's sku catalog via getRequisitions(). PurchaseOrder.items
   // only ever holds the sku_id (po_generation echoes requisition.sku_id
@@ -71,7 +86,30 @@ export default function PurchaseOrdersPage() {
     if (!selected) return;
     setSelectedSupplier(undefined);
     getSupplierForPO(selected).then(setSelectedSupplier);
+    setSupplierBreakdown(null);
+    setIsBreakdownOpen(false);
+    setBreakdownError(null);
   }, [selected]);
+
+  async function handleToggleBreakdown() {
+    if (isBreakdownOpen) {
+      setIsBreakdownOpen(false);
+      return;
+    }
+    if (!selected) return;
+    setIsBreakdownOpen(true);
+    if (supplierBreakdown) return; // already loaded for this PO
+    setIsLoadingBreakdown(true);
+    setBreakdownError(null);
+    try {
+      const breakdown = await getSupplierSelectionBreakdown(selected.items, selected.quantity);
+      setSupplierBreakdown(breakdown);
+    } catch (e) {
+      setBreakdownError(e instanceof Error ? e.message : "Failed to load scoring breakdown");
+    } finally {
+      setIsLoadingBreakdown(false);
+    }
+  }
 
   // No backend PDF pipeline exists for POs (only invoices have one, via the
   // legacy OCR script's ReportLab generator, and even that's dormant for
@@ -119,13 +157,16 @@ export default function PurchaseOrdersPage() {
     // not a data-wiring bug. The bug was display-only: lib/utils.ts's
     // shared formatCurrency() hardcodes maximumFractionDigits: 0, which is
     // fine for totals but rounds any sub-₹0.50 unit price down to "₹0".
-    // Kept scoped to just this cell -- formatCurrency() itself is used
-    // app-wide for real totals (Dashboard, Analytics, tables, etc.) where
-    // 0 decimal places is the right call, so it isn't touched here.
+    // formatCurrency() itself now defaults to 2 decimals app-wide (see
+    // lib/utils.ts), so Amount/Total/Grand Total below are already
+    // precise. Only the unit price needs a 4th decimal place explicitly --
+    // prices in the data go to 3-4 decimal places (e.g. 0.065, 2.3436),
+    // and capping at 2 would round them (0.065 -> "0.07"), which no longer
+    // multiplies back to the real total (0.07 x 300 = 21, not the real
+    // 19.50).
     const unitPrice = selected.quantity > 0 ? selected.amount / selected.quantity : 0;
-    const formattedUnitPrice = new Intl.NumberFormat("en-IN", {
-      style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2,
-    }).format(unitPrice);
+    const formattedUnitPrice = formatCurrency(unitPrice, "INR", 4);
+    const formattedTotal = formatCurrency(selected.amount);
     const stampColor = STAMP_COLOR[selected.status] ?? STAMP_COLOR.Draft;
     const poDate = new Date(selected.createdDate).toLocaleDateString("en-GB", {
       day: "2-digit", month: "long", year: "numeric",
@@ -359,7 +400,7 @@ export default function PurchaseOrdersPage() {
             <td class="num">${selected.quantity.toLocaleString()}</td>
             <td class="num">units</td>
             <td class="num">${formattedUnitPrice}</td>
-            <td class="num">${formatCurrency(selected.amount)}</td>
+            <td class="num">${formattedTotal}</td>
           </tr>
         </tbody>
       </table>
@@ -367,9 +408,9 @@ export default function PurchaseOrdersPage() {
 
     <div class="totals">
       <table>
-        <tr><td>Total</td><td>${formatCurrency(selected.amount)}</td></tr>
+        <tr><td>Total</td><td>${formattedTotal}</td></tr>
         <!-- No tax/discount data available in this system -- Total = Grand Total -->
-        <tr class="grand"><td>Grand Total</td><td>${formatCurrency(selected.amount)}</td></tr>
+        <tr class="grand"><td>Grand Total</td><td>${formattedTotal}</td></tr>
       </table>
     </div>
 
@@ -552,6 +593,84 @@ export default function PurchaseOrdersPage() {
                   <Bot size={12} /> Auto-generated by AI Agent
                 </Badge>
               )}
+
+              {/* Live, per-PO scoring breakdown -- same scoreSuppliers() call
+                  findBestSupplier() used to pick this supplier, so this can
+                  never show a different reason than the one that actually
+                  decided the pick. Nothing fetched until clicked, mirroring
+                  the Demand Sensing page's opt-in ML comparison pattern. */}
+              <button
+                onClick={handleToggleBreakdown}
+                disabled={isLoadingBreakdown}
+                className="mt-3 flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                <Scale size={11} />
+                {isLoadingBreakdown ? "Scoring candidates..." : isBreakdownOpen ? "Hide “Why this supplier?”" : "Why this supplier?"}
+              </button>
+
+              {breakdownError && <p className="mt-1 text-xs text-red-600">{breakdownError}</p>}
+
+              {isBreakdownOpen && supplierBreakdown && (() => {
+                const chosen = supplierBreakdown.find((s) => s.supplier.id === selected.supplier);
+                const others = supplierBreakdown.filter((s) => s.supplier.id !== selected.supplier).slice(0, 2);
+                return (
+                  <div className="mt-2 rounded-lg border border-dashed border-border bg-secondary/40 p-3 text-xs">
+                    {!chosen ? (
+                      <p className="text-muted-foreground">No scoring data available for this supplier/SKU.</p>
+                    ) : (
+                      <>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Selected — {chosen.supplier.name}
+                        </p>
+                        <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                          <ScoreRow label="Price" value={chosen.costScore} />
+                          <ScoreRow label="Lead time" value={chosen.speedScore} />
+                          <ScoreRow label="On-time delivery" value={chosen.onTimeDeliveryScore} />
+                          <ScoreRow label="Reliability score" value={chosen.qualityScore} />
+                        </div>
+                        <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                          <span className="font-semibold text-foreground">Final weighted score</span>
+                          <span className="font-bold text-primary-700 dark:text-primary-400">
+                            {(chosen.weightedScore * 100).toFixed(1)}
+                          </span>
+                        </div>
+                        {chosen.gmpPenaltyApplied && (
+                          <p className="mt-1.5 text-[10px] text-amber-600">GMP compliance penalty applied to this score.</p>
+                        )}
+                        {chosen.disqualifiedReason && (
+                          <p className="mt-1.5 text-[10px] text-red-600">
+                            Note: this supplier does not currently clear a hard requirement for this order quantity
+                            ({chosen.disqualifiedReason}) — likely selected manually rather than by AI Sourcing.
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {others.length > 0 && (
+                      <div className="mt-3 border-t border-border pt-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Other candidates considered</p>
+                        <div className="mt-1 space-y-1">
+                          {others.map((o) => (
+                            <div key={o.supplier.id} className="flex items-center justify-between">
+                              <span className="text-foreground">
+                                {o.supplier.name}
+                                {o.disqualifiedReason ? " (disqualified)" : ""}
+                              </span>
+                              <span className="font-medium text-muted-foreground">{(o.weightedScore * 100).toFixed(1)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="mt-3 border-t border-border pt-2 text-[10px] leading-relaxed text-muted-foreground">
+                      Weighted live for this SKU and order quantity: price 30% · lead time 20% · on-time delivery 25% ·
+                      reliability 25%, with GMP certification, defect rate, minimum order quantity and available
+                      capacity checked as hard requirements before ranking.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="mt-4 flex gap-2">
