@@ -14,3 +14,5 @@ output/printable_invoices/*.pdf
 *.txt
 !requirements.txt
 !README.md
+
+data/*.bak-*
