@@ -171,6 +171,10 @@ def list_matches_endpoint():
             "match_status": invoice["match_status"],
             "extraction_status": invoice["extraction_status"],
             "rows": build_match_rows(invoice, po, gr),
+            # Real PO unit price, for a "Source Data" UI to show alongside
+            # PO quantity/amount without deriving it from formatted row
+            # strings.
+            "po_unit_price": po["price_per_unit"],
             "is_predictive_anomaly": invoice.get("is_predictive_anomaly"),
             "predictive_anomaly_reason": invoice.get("predictive_anomaly_reason"),
         })

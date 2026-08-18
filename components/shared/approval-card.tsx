@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency, cn } from "@/lib/utils";
-import { describeViolation } from "@/lib/match-rows";
+import { describeCheck } from "@/lib/match-rows";
 import type { Approval } from "@/lib/data";
 
 export function ApprovalCard({
@@ -45,8 +45,18 @@ export function ApprovalCard({
     low: { color: "bg-red-500", badge: "destructive" as const, label: "Low Confidence" },
   }[level];
 
-  const failingRows = approval.rows.filter((r) => !r.match);
-  const passingCount = approval.rows.length - failingRows.length;
+  const passingCount = approval.rows.filter((r) => r.match).length;
+
+  // Pulled straight from the labeled rows -- each of these is already a
+  // real value from its source (see MatchRow's doc comment in lib/data.ts),
+  // never the calculated "expected" figure.
+  const rowByLabel = (label: string) => approval.rows.find((r) => r.label === label);
+  const poOrderedQty = rowByLabel("Quantity Ordered")?.po ?? "—";
+  const poAmount = rowByLabel("Total Amount Reconciliation")?.po ?? "—";
+  const grReceivedQty = rowByLabel("Quantity Received")?.gr ?? "—";
+  const invQtyOrdered = rowByLabel("Quantity Ordered")?.invoice ?? "—";
+  const invQtyReceived = rowByLabel("Quantity Received")?.invoice ?? "—";
+  const invAmount = rowByLabel("Total Amount Reconciliation")?.invoice ?? "—";
 
   return (
     <Card>
@@ -90,106 +100,96 @@ export function ApprovalCard({
 
         {showDetails && (
           <div className="mt-2 space-y-3 rounded-lg border border-dashed border-border bg-secondary/40 p-3 text-xs">
-            {/* Real PO / GR / Invoice numbers side by side, same rows and
-                pass/fail coloring the 3-Way Matching page shows for this
-                invoice -- not re-fetched, the same data. */}
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              PO {approval.poId} · GR {approval.grId ?? "—"} · Invoice {approval.invoiceId}
+            </p>
+
+            {/* Source Data -- only real, actual values from each source,
+                never a calculated comparison figure. Total Amount here is
+                the PO's real total_budget / the invoice's real
+                total_amount, not the "expected at PO rate" figure used to
+                decide the amount check below (that's clearly a separate,
+                labeled calculation in Reconciliation). */}
             <div>
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                PO {approval.poId} · GR {approval.grId ?? "—"} · Invoice {approval.invoiceId}
-              </p>
-              <div className="mt-1.5 overflow-x-auto">
-                <table className="w-full min-w-[420px] border-collapse">
-                  <thead>
-                    <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      <th className="pb-1 text-left font-medium">Check</th>
-                      <th className="pb-1 text-right font-medium">PO</th>
-                      <th className="pb-1 text-right font-medium">GR</th>
-                      <th className="pb-1 text-right font-medium">Invoice</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {approval.rows.map((r) => (
-                      <tr
-                        key={r.label}
-                        className={cn(
-                          "border-t border-border",
-                          !r.match && "bg-red-50 dark:bg-red-500/10"
-                        )}
-                      >
-                        <td className="py-1.5 pr-2 text-foreground">
-                          <span className="flex items-center gap-1">
-                            {r.match ? (
-                              <CheckCircle2 size={11} className="shrink-0 text-green-600" />
-                            ) : (
-                              <XCircle size={11} className="shrink-0 text-red-600" />
-                            )}
-                            {r.label}
-                          </span>
-                        </td>
-                        <td className="py-1.5 text-right text-muted-foreground">{r.po}</td>
-                        <td className="py-1.5 text-right text-muted-foreground">{r.gr}</td>
-                        <td
-                          className={cn(
-                            "py-1.5 text-right font-medium",
-                            r.match ? "text-foreground" : "text-red-700 dark:text-red-400"
-                          )}
-                        >
-                          {r.invoice}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Source data</p>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                <div className="rounded-md border border-border bg-card p-2">
+                  <p className="text-[10px] font-semibold text-foreground">Purchase Order</p>
+                  <dl className="mt-1 space-y-0.5">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Ordered qty</dt>
+                      <dd className="font-medium text-foreground">{poOrderedQty}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">PO amount</dt>
+                      <dd className="font-medium text-foreground">{poAmount}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Unit price</dt>
+                      <dd className="font-medium text-foreground">{formatCurrency(approval.poUnitPrice, "INR", 4)}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="rounded-md border border-border bg-card p-2">
+                  <p className="text-[10px] font-semibold text-foreground">Goods Receipt</p>
+                  <dl className="mt-1 space-y-0.5">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Received qty</dt>
+                      <dd className="font-medium text-foreground">{grReceivedQty}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="rounded-md border border-border bg-card p-2">
+                  <p className="text-[10px] font-semibold text-foreground">Invoice</p>
+                  <dl className="mt-1 space-y-0.5">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Qty ordered</dt>
+                      <dd className="font-medium text-foreground">{invQtyOrdered}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Qty received</dt>
+                      <dd className="font-medium text-foreground">{invQtyReceived}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">Invoice amount</dt>
+                      <dd className="font-medium text-foreground">{invAmount}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </div>
 
-            {/* The specific rule violated and by how much -- real computed
-                numbers, not the generic summary sentence above. */}
-            {failingRows.length > 0 && (
-              <div className="border-t border-border pt-2">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Rule violated</p>
-                <ul className="mt-1 space-y-1">
-                  {failingRows.map((r) => (
-                    <li key={r.label} className="flex items-start gap-1.5 text-red-700 dark:text-red-400">
-                      <XCircle size={11} className="mt-0.5 shrink-0" />
-                      <span>{describeViolation(r)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* AI Confidence Score breakdown -- honest about what it is:
-                the fraction of these same pass/fail checks, identical to
-                the 3-Way Matching page's Match Score, not a separately
-                computed ML confidence estimate. */}
+            {/* Reconciliation -- calculated comparisons only, clearly
+                separated from the real source data above. Total Amount
+                Reconciliation compares "Expected" (PO's unit price x the
+                invoice's own claimed quantity received -- a calculation,
+                never the PO's real total) against the invoice's real
+                amount; describeCheck() picks "Expected" over "PO" for
+                this row automatically (see lib/match-rows.ts). */}
             <div className="border-t border-border pt-2">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                AI Confidence Score breakdown
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Reconciliation (calculated)
               </p>
-              <ul className="mt-1 space-y-1">
+              <ul className="mt-1 space-y-1.5">
                 {approval.rows.map((r) => (
-                  <li key={r.label} className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      {r.match ? (
-                        <CheckCircle2 size={11} className="text-green-600" />
-                      ) : (
-                        <XCircle size={11} className="text-red-600" />
-                      )}
-                      {r.label}
-                    </span>
-                    <span className={r.match ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>
-                      {r.match ? "Pass" : "Fail"}
+                  <li key={r.label} className="flex items-start gap-1.5">
+                    {r.match ? (
+                      <CheckCircle2 size={11} className="mt-0.5 shrink-0 text-green-600" />
+                    ) : (
+                      <XCircle size={11} className="mt-0.5 shrink-0 text-red-600" />
+                    )}
+                    <span className={r.match ? "text-muted-foreground" : "text-red-700 dark:text-red-400"}>
+                      {describeCheck(r)}
                     </span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-1.5 font-medium text-foreground">
+              <p className="mt-2 font-medium text-foreground">
                 {passingCount} of {approval.rows.length} checks passed = {approval.confidence}%
               </p>
               <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                This score is the fraction of the checks above that passed — the same figure the 3-Way
-                Matching page calls "Match Score," not a separate machine-learning confidence estimate.
+                The AI Confidence Score above is this same fraction of passing checks — the same figure
+                the 3-Way Matching page calls "Match Score," not a separate machine-learning estimate.
               </p>
             </div>
           </div>

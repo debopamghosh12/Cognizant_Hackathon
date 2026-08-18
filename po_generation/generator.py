@@ -232,13 +232,28 @@ def build_match_rows(invoice: dict, po: dict, gr: dict | None) -> list[dict]:
         })
 
     if invoice.get("quantity_received") is not None and invoice.get("total_amount") is not None:
+        # expected_total is a CALCULATED figure (PO's price_per_unit x the
+        # invoice's own claimed quantity_received) -- what the invoice
+        # SHOULD total if billed at the agreed rate for what it says was
+        # received. It is genuinely what decides match/no-match here (via
+        # within_tolerance() below), same as before. What changed: it used
+        # to be returned under the "po" key, which reads as "the PO's real
+        # total" -- misleading whenever invoice quantity differs from the
+        # PO's, since the PO's real total_budget is a different number
+        # entirely (e.g. PO total_budget=19.50 vs this calculated
+        # expected_total=26.00 when the invoice over-claims quantity).
+        # "po" below is now always the PO's real total_budget, matching
+        # every other row's "po" meaning "real PO data"; the calculated
+        # figure moves to its own "expected" key so a UI can label it
+        # explicitly instead of presenting it as source data.
         expected_total = po["price_per_unit"] * invoice["quantity_received"]
         inv_total = invoice["total_amount"]
         rows.append({
             "label": "Total Amount Reconciliation",
-            "po": f"₹{expected_total:.2f}",
+            "po": f"₹{po['total_budget']:.2f}",
             "gr": "—",
             "invoice": f"₹{inv_total:.2f}",
+            "expected": f"₹{expected_total:.2f}",
             "match": within_tolerance(expected_total, inv_total),
             "variancePercent": _variance_pct(expected_total, inv_total),
             "tolerancePercent": MATCH_TOLERANCE_PERCENT,

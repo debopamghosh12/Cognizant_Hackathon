@@ -12,9 +12,18 @@ export type POStatus = "Draft" | "Sent" | "Acknowledged" | "Partially Received" 
 
 export interface MatchRow {
   label: string;
+  // Always the real value from that source (PO's own total_budget/
+  // quantity_ordered, GR's own quantity_received, invoice's own recorded
+  // fields) -- never a calculated comparison figure. For "Total Amount
+  // Reconciliation" specifically, `po` is the PO's real total_budget;
+  // the CALCULATED "what the invoice should total at the PO's rate for
+  // the quantity it claims received" figure that actually decides
+  // `match` for that row lives in `expected` instead, so a UI can never
+  // present it as if it were real PO data.
   po: string;
   gr: string;
   invoice: string;
+  expected?: string;
   match: boolean;
   // Real numbers behind the check, from the same within_tolerance() call
   // that decided `match` (po_generation/generator.py::build_match_rows) --
@@ -165,6 +174,12 @@ export interface InvoiceRecord {
   supplier: string;
   poId: string;
   quantity: number | null;
+  // Real fields (RawInvoice already carries them) previously fetched but
+  // dropped by transformInvoice() -- exposed here for the Matched Invoice
+  // Record document, which needs the invoice's own recorded quantity
+  // received/unit price rather than re-deriving them.
+  quantityReceived: number | null;
+  pricePerUnit: number | null;
   amount: number | null;
   status: InvoiceStatus;
   printablePath: string | null;
@@ -193,6 +208,9 @@ export interface Approval {
   // Approvals card's detail view can show its work instead of just this
   // card's single summary sentence.
   rows: MatchRow[];
+  // Real PO unit price -- for the Source Data card, not derived from the
+  // rows' formatted display strings.
+  poUnitPrice: number;
 }
 
 // Populated by lib/api.ts::approveInvoiceForPayment() -- shared by the

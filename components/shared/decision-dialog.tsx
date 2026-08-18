@@ -4,7 +4,7 @@ import { XCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { describeViolation } from "@/lib/match-rows";
+import { describeCheck } from "@/lib/match-rows";
 import type { Approval } from "@/lib/data";
 
 export type DecisionKind = "reject" | "escalate";
@@ -129,7 +129,7 @@ export function DecisionDialog({
                   {failingRows.map((r) => (
                     <li key={r.label} className="flex items-start gap-1.5 text-red-700 dark:text-red-400">
                       <XCircle size={11} className="mt-0.5 shrink-0" />
-                      <span>{describeViolation(r)}</span>
+                      <span>{describeCheck(r)}</span>
                     </li>
                   ))}
                 </ul>

@@ -509,6 +509,7 @@ export interface InvoiceMatch {
   match_status: string | null;
   extraction_status: string;
   rows: MatchRow[];
+  po_unit_price: number;
   // Predictive Anomaly Detection (po_generation/predictive.py) -- distinct
   // from match_status/rows above, which come from the reactive 3-way-match
   // tolerance check. No response_model on GET /matches, so these arrive as
@@ -709,6 +710,8 @@ function transformInvoice(raw: RawInvoice): InvoiceRecord {
     supplier: raw.supplier_id ?? "—",
     poId: raw.po_id,
     quantity: raw.quantity_ordered,
+    quantityReceived: raw.quantity_received,
+    pricePerUnit: raw.price_per_unit,
     amount: raw.total_amount,
     status: deriveInvoiceStatus(raw),
     printablePath: raw.printable_path,
@@ -755,6 +758,7 @@ export async function getApprovals(): Promise<Approval[]> {
           ? `${failedLabels.join(", ")} outside the 2% match tolerance.`
           : "Flagged for review.",
         rows: m.rows,
+        poUnitPrice: m.po_unit_price,
       };
     });
 }

@@ -238,9 +238,22 @@ function MatchingPageContent() {
           </CardHeader>
           <CardContent className="space-y-2">
             {rows.map((r) => (
-              <div key={r.label} className="flex items-center justify-between rounded-md bg-secondary/50 px-3 py-2 text-xs">
-                <span className="text-muted-foreground">{r.label}</span>
-                <span className="font-medium text-foreground">{r.po}</span>
+              <div key={r.label} className="rounded-md bg-secondary/50 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{r.label}</span>
+                  <span className="font-medium text-foreground">{r.po}</span>
+                </div>
+                {/* r.expected only exists on Total Amount Reconciliation --
+                    a CALCULATED figure (PO rate x invoice's claimed
+                    quantity), not the PO's real total shown above. Shown
+                    separately and labeled so it's never mistaken for
+                    source data. */}
+                {r.expected && (
+                  <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>Expected (calculated)</span>
+                    <span>{r.expected}</span>
+                  </div>
+                )}
               </div>
             ))}
           </CardContent>
